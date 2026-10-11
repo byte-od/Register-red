@@ -19,6 +19,8 @@ uvicorn.log
 # Data & Sensitive Cache
 data/*.json
 !data/.gitkeep
+.env
+.env.*
 
 # Node & Frontend
 frontend/node_modules/
