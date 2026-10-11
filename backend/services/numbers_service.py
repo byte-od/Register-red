@@ -315,11 +315,11 @@ def parse_single_numbers_file(filepath: str) -> Optional[MonthData]:
             m_inst = re.search(r"\(?(\d+)\s*[/xX]\s*(\d+)\)?", name_val)
             if m_inst:
                 try:
-                    c = int(m_inst.group(1))
-                    t = int(m_inst.group(2))
-                    if t >= c and t > 1:
-                        inst_curr = c
-                        inst_tot = t
+                    parsed_curr = int(m_inst.group(1))
+                    parsed_tot = int(m_inst.group(2))
+                    if parsed_tot >= parsed_curr and parsed_tot > 1:
+                        inst_curr = parsed_curr
+                        inst_tot = parsed_tot
                 except ValueError:
                     pass
 
