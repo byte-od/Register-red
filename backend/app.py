@@ -352,59 +352,52 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         origem = (m_inc_nu.group(2) or "Depósito / Pix").strip(" .")
         return {"action": "income", "name": f"Recebido: {origem}", "amount": amt_bank or 0.0}
 
-    # 0b. Detecção de Despesas Bancárias / Nubank (Destinatário geralmente após 'para')
+    # 0b. Detecção de Despesas Bancárias / Nubank (Destinatário geralmente após 'para' ou 'em')
+    CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/-]"
     bank_dest = None
     bank_cat = "gastos"
 
     # Compra no cartão de crédito / débito
-    m_cartao = re.search(r"compra\s+(?:aprovada\s+)?(?:de\s+r\$\s*[\d.,]+\s+)?(?:no\s+(cr[ée]dito|d[ée]bito))?\s*em\s+(.+?)(?:\s+aprovada|\.|$)", cmd, re.I)
+    m_cartao = re.search(r"compra\s+(?:aprovada\s+)?(?:de\s+r\$\s*[\d.,]+\s+)?(?:no\s+(cr[ée]dito|d[ée]bito)\s+)?em\s+(" + CHARS + r"+?)(?:\s+aprovada|\.|$)", cmd, re.I)
     if m_cartao:
         tipo = (m_cartao.group(1) or "").lower()
         if "cr" in tipo:
             bank_cat = "credito"
         bank_dest = m_cartao.group(2).strip(" .:-")
 
-    # Nu Empresas / Nubank e-mail de transferência:
-    # "A transferência (entre contas do Nubank)? para [FAVORECIDO] foi realizada com sucesso"
-    if not bank_dest:
-        m_transf = re.search(r"transfer[êe]ncia\s+(?:entre\s+contas\s+(?:do\s+nubank\s+)?para|para)\s+(.+?)\s+foi\s+realizada\s+com\s+sucesso", cmd, re.I | re.S)
-        if m_transf:
-            bank_dest = m_transf.group(1).strip(" .:-")
-
-    # Pix Automático Nubank:
-    # "Seu Pix Automático para [FAVORECIDO] (no valor de|valor de|foi concluído)"
-    if not bank_dest:
-        m_pix_auto = re.search(r"pix\s+autom[áa]tico\s+para\s+(.+?)(?:\s+no\s+valor|\s+valor|\s+foi\s+conclu[íi]d)", cmd, re.I | re.S)
-        if m_pix_auto:
-            bank_dest = m_pix_auto.group(1).strip(" .:-")
-
-    # "Você transferiu R$ X para [FAVORECIDO]"
-    if not bank_dest:
-        m_transf2 = re.search(r"(?:voc[êe]\s+transferiu|transferiu)\s+(?:r\$\s*[\d.,]+\s+)?para\s+(.+?)(?:\s+com\s+sucesso|\.|$|\s+data:)", cmd, re.I)
-        if m_transf2:
-            bank_dest = m_transf2.group(1).strip(" .:-")
-
-    # "Transferência ... enviada para [FAVORECIDO]"
-    if not bank_dest:
-        m_transf3 = re.search(r"(?:enviada|enviado)\s+para\s+(.+?)(?:\s+com\s+sucesso|\.|$|\s+data:)", cmd, re.I)
-        if m_transf3:
-            bank_dest = m_transf3.group(1).strip(" .:-")
-
-    # Você pagou R$ X em [ESTABELECIMENTO]
-    if not bank_dest:
-        m_pagou = re.search(r"voc[êe]\s+pagou\s+(?:r\$\s*[\d.,]+\s+)?em\s+(.+?)(?:\s+com\s+sucesso|\.|$)", cmd, re.I)
-        if m_pagou:
-            bank_dest = m_pagou.group(1).strip(" .:-")
-
     # Boleto: "Você pagou o boleto de R$ X de/para [FAVORECIDO]"
     if not bank_dest:
-        m_bol = re.search(r"boleto\s+(?:de\s+r\$\s*[\d.,]+\s+)?(?:de|para)\s+(.+?)(?:\s+com\s+sucesso|\.|$|\s+pago)", cmd, re.I)
+        m_bol = re.search(r"boleto\s+(?:de\s+r\$\s*[\d.,]+\s+)?(?:de|para)\s+(" + CHARS + r"+?)(?:\s+(?:com\s+sucesso|pago)|\.|$)", cmd, re.I)
         if m_bol:
             bank_dest = m_bol.group(1).strip(" .:-")
 
+    # Pix / Transferência com verbos: Você realizou/transferiu/enviou/fez ... para [FAVORECIDO]
+    if not bank_dest:
+        m_verb = re.search(r"(?:voc[êe]\s+)?(?:transferiu|realizou\s+(?:uma\s+)?transfer[êe]ncia|enviou\s+(?:um\s+)?pix|fez\s+(?:um\s+)?pix|pagou)\s+(?:(?:de|no\s+valor(?:\s+de)?)\s+r\$\s*[\d.,]+\s+)?para\s+(" + CHARS + r"+?)(?:\s+(?:no\s+valor|valor|com\s+sucesso)|\.|$|\s+data:)", cmd, re.I)
+        if m_verb:
+            bank_dest = m_verb.group(1).strip(" .:-")
+
+    # Nu Empresas / Nubank / Transferência / Pix enviado para [FAVORECIDO]
+    if not bank_dest:
+        m_transf = re.search(r"(?:transfer[êe]ncia\s+(?:entre\s+contas\s+(?:do\s+nubank\s+)?para|para|enviada\s+para)|pix\s+enviado\s+para)\s+(" + CHARS + r"+?)(?:\s+(?:foi\s+realizada|no\s+valor|com\s+sucesso)|\.|$)", cmd, re.I | re.S)
+        if m_transf:
+            bank_dest = m_transf.group(1).strip(" .:-")
+
+    # Pix Automático Nubank: "Seu Pix Automático para [FAVORECIDO]"
+    if not bank_dest:
+        m_pix_auto = re.search(r"pix\s+autom[áa]tico\s+para\s+(" + CHARS + r"+?)(?:\s+(?:no\s+valor|valor|foi\s+conclu[íi]d)|\.|$)", cmd, re.I | re.S)
+        if m_pix_auto:
+            bank_dest = m_pix_auto.group(1).strip(" .:-")
+
+    # Você pagou R$ X em [ESTABELECIMENTO]
+    if not bank_dest:
+        m_pagou = re.search(r"voc[êe]\s+pagou\s+(?:r\$\s*[\d.,]+\s+)?em\s+(" + CHARS + r"+?)(?:\s+com\s+sucesso|\.|$)", cmd, re.I)
+        if m_pagou:
+            bank_dest = m_pagou.group(1).strip(" .:-")
+
     # Genérico bancário: qualquer frase bancária contendo "para [FAVORECIDO]"
     if not bank_dest and amt_bank is not None and any(k in cmd_lower for k in ["nubank", "transferência", "transferencia", "pix", "comprovante", "pagamento"]):
-        m_gen = re.search(r"\bpara\s+([A-Za-z0-9\s.,\'()/-]+?)(?:\s+(?:no\s+valor|valor\s+de|valor\s+enviado|foi\s+realizada|foi\s+conclu[íi]d[ao]|com\s+sucesso|\.|\n|$))", cmd, re.I)
+        m_gen = re.search(r"\bpara\s+(" + CHARS + r"+?)(?=(?:\s+(?:no\s+valor|valor\s+de|valor\s+enviado|foi\s+realizada|foi\s+conclu[íi]d[ao]|com\s+sucesso))|(?:\s*[\.\n]|$))", cmd, re.I)
         if m_gen:
             bank_dest = m_gen.group(1).strip(" .:-")
 
@@ -659,12 +652,12 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
         # Se este pagamento bater com uma conta que já estava planejada e pendente na planilha
         # (ex: Aluguel, Luz, Internet, Condomínio, Claro, etc.), damos baixa nela em vez de duplicar em Gastos!
         BILL_ALIASES = {
-            "luz": ["enel", "cpfl", "cemig", "eletropaulo", "energia", "luz", "energisa", "neoenergia"],
-            "agua": ["agua", "água", "sabesp", "sanepar", "copasa", "caesb", "dae", "saae", "corsan"],
-            "internet": ["internet", "fibra", "vero", "desktop", "claro net", "provedor", "starlink"],
-            "aluguel": ["aluguel", "imobiliaria", "imobiliária", "proprietario", "proprietário", "locacao", "locação", "imoveis", "imóveis", "matinhos"],
+            "luz": ["enel", "cpfl", "cemig", "eletropaulo", "energia", "luz", "energisa", "neoenergia", "copel", "light"],
+            "agua": ["agua", "água", "sabesp", "sanepar", "copasa", "caesb", "dae", "saae", "corsan", "cedae"],
+            "internet": ["internet", "fibra", "vero", "desktop", "claro net", "provedor", "starlink", "oi fibra"],
+            "aluguel": ["aluguel", "imobiliaria", "imobiliária", "proprietario", "proprietário", "locacao", "locação"],
             "condominio": ["condominio", "condomínio", "administradora"],
-            "gas": ["gas", "gás", "ultragaz", "liquigas", "copagaz", "supergasbras"],
+            "gas": ["gas", "gás", "ultragaz", "liquigas", "copagaz", "supergasbras", "nacional gas"],
             "claro": ["claro"],
             "tim": ["tim"],
             "vivo": ["vivo"]
@@ -673,27 +666,36 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
         def bill_name_match(bill_n: str, target_n: str) -> bool:
             b = bill_n.lower().strip()
             t = target_n.lower().strip()
-            if b in t or t in b:
+            if not b or not t:
+                return False
+            # Correspondência exata direta
+            if b == t:
                 return True
+            # Verificação com limites de palavras para evitar falso positivo em palavras curtas
+            if len(b) >= 3 and re.search(rf"\b{re.escape(b)}\b", t, re.I):
+                return True
+            if len(t) >= 4 and re.search(rf"\b{re.escape(t)}\b", b, re.I):
+                return True
+            # Aliases por concessionária / serviço com limites de palavras
             for key, words in BILL_ALIASES.items():
-                if key in b and any(w in t for w in words):
-                    return True
-                if key in t and any(w in b for w in words):
-                    return True
+                if re.search(rf"\b{re.escape(key)}\b", b, re.I):
+                    if any(re.search(rf"\b{re.escape(w)}\b", t, re.I) for w in words):
+                        return True
             return False
 
         matched_pending = None
         matched_pending_cat = None
         clean_target = name.lower().strip()
 
-        # 1. Match por nome e valor aproximado
+        # 1. Match por nome e valor compatível (nunca dar baixa sem correspondência de nome!)
         for c in month.categories:
             if c.id == "gastos":
                 continue
             for it in c.items:
                 if not it.paid:
                     if bill_name_match(it.name, clean_target):
-                        if amount == 0.0 or abs(it.amount - amount) <= 150.0 or it.amount == 0.0:
+                        # Se o nome bateu, confere se o valor é plausível (tolerância para contas que variam como luz/água)
+                        if amount == 0.0 or it.amount == 0.0 or abs(it.amount - amount) <= 100.0 or (it.amount > 0 and abs(it.amount - amount) / it.amount <= 0.4):
                             matched_pending = it
                             matched_pending_cat = c
                             break
@@ -707,7 +709,7 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
                     continue
                 for it in c.items:
                     if it.paid and bill_name_match(it.name, clean_target):
-                        if amount == 0.0 or abs(it.amount - amount) <= 150.0:
+                        if amount == 0.0 or it.amount == 0.0 or abs(it.amount - amount) <= 100.0:
                             speech = (
                                 f"A conta planejada '{it.name}' de R$ {it.amount:,.2f} já está marcada como quitada na categoria {c.name}. "
                                 f"Nenhuma despesa duplicada foi gerada em Gastos."
@@ -722,18 +724,6 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
                                 "item": it.model_dump(),
                                 "summary": month.summary.model_dump()
                             }
-
-        # 2. Match por valor exato se o valor for expressivo (>= R$ 50) e único entre as contas pendentes
-        if not matched_pending and amount >= 50.0:
-            exact_matches = []
-            for c in month.categories:
-                if c.id == "gastos":
-                    continue
-                for it in c.items:
-                    if not it.paid and abs(it.amount - amount) < 0.01:
-                        exact_matches.append((it, c))
-            if len(exact_matches) == 1:
-                matched_pending, matched_pending_cat = exact_matches[0]
 
         if matched_pending:
             # Baixa automática na conta planejada!
@@ -824,8 +814,11 @@ async def gemini_email_post(request: Request):
     body_bytes = await request.body()
     raw_text = body_bytes.decode("utf-8", errors="ignore")
     clean = clean_email_html(raw_text)
+    print(f"[Email Received] Raw preview: {raw_text[:180]!r} | Cleaned: {clean[:120]!r}")
     payload = GeminiActionPayload(command=clean)
-    return execute_gemini_action(payload)
+    result = execute_gemini_action(payload)
+    print(f"[Email Processed] Action: {result.get('action')} | Success: {result.get('success')} | Message: {result.get('message')}")
+    return result
 
 @app.get("/api/gemini/action")
 def gemini_action_get(
