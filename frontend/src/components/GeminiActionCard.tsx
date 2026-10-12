@@ -194,7 +194,14 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
     }
   };
 
-  const getSourceBadge = (source: string) => {
+  const getSourceBadge = (source: string, isSeed?: boolean) => {
+    if (isSeed) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 px-1.5 py-0.5 rounded-md">
+          <span>Planilha</span>
+        </span>
+      );
+    }
     if (source === 'gmail') {
       return (
         <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60 px-1.5 py-0.5 rounded-md">
@@ -203,7 +210,7 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
         </span>
       );
     }
-    if (source === 'gemini_ai') {
+    if (source === 'gemini_ai' || source === 'gemini') {
       return (
         <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/60 px-1.5 py-0.5 rounded-md">
           <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
@@ -218,10 +225,25 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
     );
   };
 
-  const formatRelativeTime = (isoString?: string) => {
-    if (!isoString) return '';
+  const formatActionTime = (act: RecentAction) => {
+    // Se for item importado como seed histórico da planilha
+    if (act.id.startsWith('seed_')) {
+      if (act.details && act.details !== 'Planilha') {
+        if (act.details.includes('-')) {
+          const parts = act.details.split('-');
+          if (parts.length === 3) return `${parts[2]}/${parts[1]}`;
+        }
+        return act.details;
+      }
+      return 'Planilha';
+    }
+
+    if (!act.timestamp) {
+      return act.details || 'Planilha';
+    }
+
     try {
-      const date = new Date(isoString);
+      const date = new Date(act.timestamp);
       const now = new Date();
       const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
       if (diffSec < 60) return 'Agora';
@@ -354,10 +376,10 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800/80">
-                  {getSourceBadge(act.source)}
+                  {getSourceBadge(act.source, act.id.startsWith('seed_'))}
                   <span className="flex items-center gap-1">
                     <Clock className="w-2.5 h-2.5" />
-                    {formatRelativeTime(act.timestamp)}
+                    {formatActionTime(act)}
                   </span>
                 </div>
               </div>

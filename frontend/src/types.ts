@@ -102,5 +102,5 @@ export interface RecentAction {
   source: string;
   status?: string;
   details?: string | null;
-  timestamp: string;
+  timestamp?: string | null;
 }

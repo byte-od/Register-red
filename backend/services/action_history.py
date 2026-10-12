@@ -77,7 +77,7 @@ class ActionHistory:
                         "source": "gmail" if exp.notes and "Nubank" in exp.notes else "manual",
                         "status": "Pago" if exp.paid else "Pendente",
                         "details": exp.due_day or "Planilha",
-                        "timestamp": getattr(month_data, "last_modified", datetime.now().isoformat())
+                        "timestamp": None
                     })
                     if len(result) >= limit:
                         break
