@@ -1,4 +1,4 @@
-import { MonthData, MonthListItem, CreateMonthPayload, OverviewStats } from './types';
+import { MonthData, MonthListItem, CreateMonthPayload, OverviewStats, RecentAction } from './types';
 
 const API_BASE = '/api';
 
@@ -101,6 +101,14 @@ export async function fetchOverviewStats(): Promise<OverviewStats> {
   const res = await fetch(`${API_BASE}/stats/overview`);
   if (!res.ok) throw new Error('Falha ao buscar estatísticas');
   return res.json();
+}
+
+export async function fetchRecentActions(limit: number = 8, monthId?: string): Promise<RecentAction[]> {
+  const url = `${API_BASE}/recent-actions?limit=${limit}${monthId ? `&month_id=${encodeURIComponent(monthId)}` : ''}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Falha ao carregar ações recentes');
+  const data = await res.json();
+  return data.actions || [];
 }
 
 export function formatBRL(value: number): string {

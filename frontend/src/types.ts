@@ -92,3 +92,15 @@ export interface OverviewStats {
   total_active_months: number;
   drive_path: string;
 }
+
+export interface RecentAction {
+  id: string;
+  type: string;
+  title: string;
+  amount?: number | null;
+  category?: string;
+  source: string;
+  status?: string;
+  details?: string | null;
+  timestamp: string;
+}

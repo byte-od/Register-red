@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Sparkles, Zap, Home, User, CreditCard, Volume2, 
-  Smartphone, Send, Mic, MicOff, CheckCircle2, AlertCircle, RefreshCw
+  Sparkles, Zap, Volume2, Smartphone, Send, Mic, MicOff, 
+  CheckCircle2, RefreshCw, History, ArrowRightLeft, Mail, ShoppingBag, 
+  TrendingUp, Clock, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { ExpenseCategory } from '../types';
+import { ExpenseCategory, RecentAction } from '../types';
+import { fetchRecentActions, formatBRL } from '../api';
 
 interface GeminiActionCardProps {
   currentMonthId: string;
   categories: ExpenseCategory[];
-  onOpenQuickGastos: () => void;
-  onOpenAddExpenseForCategory: (catId: string) => void;
+  onOpenQuickGastos?: () => void;
+  onOpenAddExpenseForCategory?: (catId: string) => void;
   onOpenShortcutsGuide: () => void;
   onRefreshMonth: () => void;
   showToast: (msg: string, type?: 'success' | 'info' | 'error') => void;
@@ -29,6 +31,27 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
   const [responseMsg, setResponseMsg] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [actions, setActions] = useState<RecentAction[]>([]);
+  const [loadingActions, setLoadingActions] = useState(false);
+  const [showAllActions, setShowAllActions] = useState(false);
+
+  const loadRecentActions = async () => {
+    try {
+      setLoadingActions(true);
+      const list = await fetchRecentActions(8, currentMonthId);
+      setActions(list);
+    } catch (err) {
+      console.error('Erro ao buscar ações recentes', err);
+    } finally {
+      setLoadingActions(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRecentActions();
+    const interval = setInterval(loadRecentActions, 15000); // Polling a cada 15s para detectar automações
+    return () => clearInterval(interval);
+  }, [currentMonthId]);
 
   // Voice Recognition via Web Speech API
   const handleToggleVoice = () => {
@@ -96,6 +119,7 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
         setResponseMsg(data.speech_text || data.message);
         showToast(data.message, 'success');
         onRefreshMonth();
+        loadRecentActions();
         setCommand('');
       } else {
         setResponseMsg(`⚠️ ${data.message}`);
@@ -140,6 +164,77 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
     }
   };
 
+  const getActionIcon = (act: RecentAction) => {
+    switch (act.type) {
+      case 'toggle_paid':
+      case 'reconciled':
+        return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />;
+      case 'income':
+        return <TrendingUp className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />;
+      case 'move':
+        return <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />;
+      case 'create':
+      default:
+        return <ShoppingBag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />;
+    }
+  };
+
+  const getActionBg = (act: RecentAction) => {
+    switch (act.type) {
+      case 'toggle_paid':
+      case 'reconciled':
+        return 'bg-emerald-100 dark:bg-emerald-950/80';
+      case 'income':
+        return 'bg-teal-100 dark:bg-teal-950/80';
+      case 'move':
+        return 'bg-blue-100 dark:bg-blue-950/80';
+      case 'create':
+      default:
+        return 'bg-indigo-100 dark:bg-indigo-950/80';
+    }
+  };
+
+  const getSourceBadge = (source: string) => {
+    if (source === 'gmail') {
+      return (
+        <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60 px-1.5 py-0.5 rounded-md">
+          <Mail className="w-2.5 h-2.5 text-emerald-500" />
+          <span>Gmail 24h</span>
+        </span>
+      );
+    }
+    if (source === 'gemini_ai') {
+      return (
+        <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/60 px-1.5 py-0.5 rounded-md">
+          <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
+          <span>IA</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 px-1.5 py-0.5 rounded-md">
+        <span>Manual</span>
+      </span>
+    );
+  };
+
+  const formatRelativeTime = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+      if (diffSec < 60) return 'Agora';
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m atrás`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h atrás`;
+      return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const displayedActions = showAllActions ? actions.slice(0, 8) : actions.slice(0, 4);
+
   return (
     <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 dark:from-indigo-950/40 dark:via-purple-950/40 dark:to-pink-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-3xl p-4 sm:p-5 shadow-sm space-y-4">
       
@@ -151,85 +246,147 @@ export const GeminiActionCard: React.FC<GeminiActionCardProps> = ({
           </div>
           <div>
             <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white flex items-center gap-1.5">
-              <span>Ações Rápidas & Gemini (Celular & Tablet)</span>
+              <span>Central de Inteligência & Ações (Mac, Celular & Tablet)</span>
               <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300 px-2 py-0.5 rounded-full">
                 Voz & Texto
               </span>
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Crie, leia e dê baixa em despesas de qualquer categoria com 1 toque ou comando natural
+              Controle por voz, linguagem natural e automação 24h via Gmail e IA
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenShortcutsGuide}
-          className="inline-flex items-center self-start sm:self-auto px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs transition-colors shrink-0"
-        >
-          <Smartphone className="w-3.5 h-3.5 mr-1.5 text-indigo-500" />
-          <span>Configurar no Celular/Tablet</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          <button
+            type="button"
+            onClick={onOpenShortcutsGuide}
+            className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs transition-colors shrink-0"
+          >
+            <Smartphone className="w-3.5 h-3.5 mr-1.5 text-indigo-500" />
+            <span>Configurar Dispositivos</span>
+          </button>
+        </div>
       </div>
 
-      {/* 🚀 CALL TO ACTION BUTTONS (CTAs Rápidos de 1 Toque) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5">
-        
-        {/* CTA 1: Gastos Imprevistos */}
-        <button
-          type="button"
-          onClick={onOpenQuickGastos}
-          className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
-        >
-          <Zap className="w-3.5 h-3.5 mr-1.5 fill-white" />
-          <span>+ Gastos (Imprevistos)</span>
-        </button>
+      {/* 🕒 ÚLTIMAS AÇÕES (Substitui os atalhos rápidos) */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+              <History className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span>Últimas Ações</span>
+            </div>
+            <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-950/80 px-2 py-0.5 rounded-full flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Tempo Real</span>
+            </span>
+          </div>
 
-        {/* CTA 2: Gasto em Casa */}
-        <button
-          type="button"
-          onClick={() => onOpenAddExpenseForCategory('casa')}
-          className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors shrink-0"
-        >
-          <Home className="w-3.5 h-3.5 mr-1.5" />
-          <span>+ Casa</span>
-        </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSpeakBriefing}
+              className={`inline-flex items-center px-2.5 py-1 rounded-xl text-[11px] font-semibold border transition-all ${
+                isSpeaking
+                  ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 animate-pulse'
+                  : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-white shadow-2xs'
+              }`}
+              title="Ouvir resumo financeiro do mês em voz alta"
+            >
+              <Volume2 className="w-3.5 h-3.5 mr-1 text-indigo-500" />
+              <span>{isSpeaking ? 'Parar Áudio' : 'Ouvir Resumo'}</span>
+            </button>
 
-        {/* CTA 3: Gasto em Pessoal */}
-        <button
-          type="button"
-          onClick={() => onOpenAddExpenseForCategory('pessoal')}
-          className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition-colors shrink-0"
-        >
-          <User className="w-3.5 h-3.5 mr-1.5" />
-          <span>+ Pessoal</span>
-        </button>
+            <button
+              type="button"
+              onClick={loadRecentActions}
+              disabled={loadingActions}
+              className="text-[11px] text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-300 p-1.5 rounded-lg hover:bg-white/60 dark:hover:bg-slate-800 transition-colors"
+              title="Recarregar últimas ações"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingActions ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
 
-        {/* CTA 4: Gasto em Crédito */}
-        <button
-          type="button"
-          onClick={() => onOpenAddExpenseForCategory('credito')}
-          className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition-colors shrink-0"
-        >
-          <CreditCard className="w-3.5 h-3.5 mr-1.5" />
-          <span>+ Crédito</span>
-        </button>
+        {/* Cards das ações recentes */}
+        {actions.length === 0 ? (
+          <div className="bg-white/60 dark:bg-slate-900/60 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-3.5 text-center text-xs text-slate-500 dark:text-slate-400">
+            Nenhuma ação recente registrada ainda.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            {displayedActions.map((act) => (
+              <div
+                key={act.id}
+                className="bg-white/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${getActionBg(act)}`}>
+                      {getActionIcon(act)}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate" title={act.title}>
+                        {act.title}
+                      </h4>
+                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                        <span className="truncate">{act.category || 'Geral'}</span>
+                        {act.status && (
+                          <>
+                            <span>•</span>
+                            <span className={act.status === 'Pago' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-500'}>
+                              {act.status}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {act.amount !== null && act.amount !== undefined && (
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                        {formatBRL(act.amount)}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-        {/* CTA 5: Ouvir Resumo em Voz Alta */}
-        <button
-          type="button"
-          onClick={handleSpeakBriefing}
-          className={`inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold border transition-all shrink-0 ${
-            isSpeaking
-              ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 animate-pulse'
-              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-          }`}
-          title="Ouvir resumo financeiro do mês em voz alta"
-        >
-          <Volume2 className="w-3.5 h-3.5 mr-1.5 text-indigo-500" />
-          <span>{isSpeaking ? 'Parar Áudio' : 'Ouvir Resumo'}</span>
-        </button>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                  {getSourceBadge(act.source)}
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-2.5 h-2.5" />
+                    {formatRelativeTime(act.timestamp)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
+        {/* Toggle para mostrar até 8 ações se houver mais de 4 */}
+        {actions.length > 4 && (
+          <div className="flex justify-center pt-0.5">
+            <button
+              type="button"
+              onClick={() => setShowAllActions(!showAllActions)}
+              className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 flex items-center gap-1 py-0.5 px-2 rounded-lg hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors"
+            >
+              {showAllActions ? (
+                <>
+                  <span>Mostrar menos</span>
+                  <ChevronUp className="w-3 h-3" />
+                </>
+              ) : (
+                <>
+                  <span>Ver mais ({actions.length})</span>
+                  <ChevronDown className="w-3 h-3" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 💬 BARRA DE COMANDO EM LINGUAGEM NATURAL */}

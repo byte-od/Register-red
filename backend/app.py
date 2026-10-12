@@ -20,6 +20,7 @@ try:
     from backend.services.numbers_service import numbers_manager, GOOGLE_DRIVE_DIR
     from backend.services.excel_service import generate_excel_workbook
     from backend.services.gmail_watcher import gmail_watcher
+    from backend.services.action_history import action_history
 except ImportError:
     from models.schema import (
         MonthData, MonthListItem, CreateMonthRequest, SyncResult, ExpenseItem, ExpenseCategory, IncomeItem
@@ -27,6 +28,7 @@ except ImportError:
     from services.numbers_service import numbers_manager, GOOGLE_DRIVE_DIR
     from services.excel_service import generate_excel_workbook
     from services.gmail_watcher import gmail_watcher
+    from services.action_history import action_history
 
 app = FastAPI(title="Gestão Financeira & Planilhas Numbers", version="1.0.0")
 
@@ -79,20 +81,31 @@ def toggle_paid(month_id: str, item_id: str, paid: bool):
     if not month:
         raise HTTPException(status_code=404, detail="Mês não encontrado")
     
-    found = False
+    found_it = None
+    found_cat = None
     for cat in month.categories:
         for it in cat.items:
             if it.id == item_id:
                 it.paid = paid
+                found_it = it
+                found_cat = cat
                 found = True
                 break
         if found:
             break
             
-    if not found:
+    if not found or not found_it:
         raise HTTPException(status_code=404, detail="Item de despesa não encontrado")
 
     updated = numbers_manager.update_month(month_id, month)
+    action_history.record(
+        action_type="pay" if paid else "unpay",
+        title=found_it.name,
+        amount=found_it.amount,
+        category=found_cat.name if found_cat else "Gastos",
+        source="manual",
+        status="Pago" if paid else "Pendente"
+    )
     return {"success": True, "item_id": item_id, "paid": paid, "summary": updated.summary}
 
 @app.post("/api/months/{month_id}/toggle-recurring")
@@ -180,6 +193,15 @@ def move_item(
     target_cat.items.append(found_item)
 
     updated = numbers_manager.update_month(month_id, month)
+    inst_txt = f" ({installments_current}/{installments_total})" if installments_total else ""
+    action_history.record(
+        action_type="move",
+        title=f"{found_item.name}{inst_txt}",
+        amount=found_item.amount,
+        category=target_cat.name,
+        source="manual",
+        status=f"Movido para {target_cat.name}"
+    )
     return {
         "success": True,
         "item": found_item,
@@ -640,6 +662,14 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             f"Suas entradas totais subiram para R$ {updated.summary.total_income:,.2f} "
             f"e seu saldo restante aumentou para R$ {updated.summary.balance:,.2f}."
         )
+        action_history.record(
+            action_type="income",
+            title=new_inc.name,
+            amount=new_inc.amount,
+            category="Receitas",
+            source="gemini",
+            status="Recebido"
+        )
         return {
             "success": True,
             "action": "income",
@@ -751,6 +781,14 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
                 f"identificada e baixada com sucesso na categoria {matched_pending_cat.name}! "
                 f"Saldo restante no mês: R$ {updated.summary.balance:,.2f}."
             )
+            action_history.record(
+                action_type="reconciled",
+                title=matched_pending.name,
+                amount=matched_pending.amount,
+                category=matched_pending_cat.name,
+                source="gmail" if notes and "Nubank" in notes else "gemini",
+                status="Baixa automática"
+            )
             return {
                 "success": True,
                 "action": "pay",
@@ -823,6 +861,14 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             f"Gasto '{new_item.name}' de R$ {new_item.amount:,.2f} cadastrado e quitado com sucesso "
             f"na categoria {target_cat.name}! Saldo restante no mês: R$ {updated.summary.balance:,.2f}."
         )
+        action_history.record(
+            action_type="create",
+            title=new_item.name,
+            amount=new_item.amount,
+            category=target_cat.name,
+            source="gmail" if notes and "Nubank" in notes else "gemini",
+            status="Quitado" if item_paid else "Pendente"
+        )
         return {
             "success": True,
             "action": "create",
@@ -887,6 +933,17 @@ def trigger_gmail_watcher_check():
         "success": True,
         "processed_count": len(results),
         "results": results
+    }
+
+@app.get("/api/recent-actions")
+def get_recent_actions(limit: int = 10, month_id: Optional[str] = None):
+    try:
+        month_data = numbers_manager.get_month(month_id or "2026-10")
+    except Exception:
+        month_data = None
+    return {
+        "success": True,
+        "actions": action_history.get_recent(limit=limit, month_data=month_data)
     }
 
 @app.get("/api/gemini/briefing")
