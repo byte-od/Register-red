@@ -19,12 +19,14 @@ try:
     )
     from backend.services.numbers_service import numbers_manager, GOOGLE_DRIVE_DIR
     from backend.services.excel_service import generate_excel_workbook
+    from backend.services.gmail_watcher import gmail_watcher
 except ImportError:
     from models.schema import (
         MonthData, MonthListItem, CreateMonthRequest, SyncResult, ExpenseItem, ExpenseCategory, IncomeItem
     )
     from services.numbers_service import numbers_manager, GOOGLE_DRIVE_DIR
     from services.excel_service import generate_excel_workbook
+    from services.gmail_watcher import gmail_watcher
 
 app = FastAPI(title="Gestão Financeira & Planilhas Numbers", version="1.0.0")
 
@@ -35,6 +37,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def startup_event():
+    gmail_watcher.start_background()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    gmail_watcher.stop()
 
 @app.get("/api/months", response_model=List[MonthListItem])
 def list_months():
@@ -655,7 +665,7 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             "luz": ["enel", "cpfl", "cemig", "eletropaulo", "energia", "luz", "energisa", "neoenergia", "copel", "light"],
             "agua": ["agua", "água", "sabesp", "sanepar", "copasa", "caesb", "dae", "saae", "corsan", "cedae"],
             "internet": ["internet", "fibra", "vero", "desktop", "claro net", "provedor", "starlink", "oi fibra"],
-            "aluguel": ["aluguel", "imobiliaria", "imobiliária", "proprietario", "proprietário", "locacao", "locação"],
+            "aluguel": ["aluguel", "imobiliaria", "imobiliária", "proprietario", "proprietário", "locacao", "locação", "imoveis", "imóveis", "matinhos"],
             "condominio": ["condominio", "condomínio", "administradora"],
             "gas": ["gas", "gás", "ultragaz", "liquigas", "copagaz", "supergasbras", "nacional gas"],
             "claro": ["claro"],
@@ -768,6 +778,24 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
                 target_cat = ExpenseCategory(id="gastos", name="Gastos", items=[])
                 month.categories.append(target_cat)
 
+        # Anti-duplicação na categoria: Se já existir um gasto idêntico (mesmo nome e mesmo valor)
+        for it in target_cat.items:
+            if it.name.lower().strip() == name.lower().strip() and abs(it.amount - round(float(amount), 2)) < 0.01:
+                speech = (
+                    f"O gasto '{it.name}' de R$ {it.amount:,.2f} já estava registrado na categoria {target_cat.name}. "
+                    f"Nenhuma despesa duplicada foi gerada."
+                )
+                return {
+                    "success": True,
+                    "action": "create",
+                    "duplicate": True,
+                    "message": speech,
+                    "speech_text": speech,
+                    "category": target_cat.id,
+                    "item": it.model_dump(),
+                    "summary": month.summary.model_dump()
+                }
+
         if target_cat.id == "gastos":
             is_rec = False
             item_paid = True
@@ -840,6 +868,26 @@ def gemini_action_get(
         month_id=month_id
     )
     return execute_gemini_action(payload)
+
+@app.get("/api/gmail-watcher/status")
+def get_gmail_watcher_status():
+    return {
+        "running": gmail_watcher._running,
+        "user": gmail_watcher.user,
+        "interval_seconds": gmail_watcher.check_interval,
+        "last_check": gmail_watcher.last_check.isoformat() if gmail_watcher.last_check else None,
+        "last_status": gmail_watcher.last_status,
+        "processed_count": gmail_watcher.processed_count
+    }
+
+@app.post("/api/gmail-watcher/check-now")
+def trigger_gmail_watcher_check():
+    results = gmail_watcher.check_new_emails()
+    return {
+        "success": True,
+        "processed_count": len(results),
+        "results": results
+    }
 
 @app.get("/api/gemini/briefing")
 def gemini_briefing(month_id: Optional[str] = None):

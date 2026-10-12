@@ -67,9 +67,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <Cloud className="w-2.5 h-2.5 md:w-3 md:h-3 mr-1" />
                   <span className="hidden md:inline">Google </span>Drive
                 </span>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] md:text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 shrink-0" title="Automação 24h ativa no Mac: e-mails bancários sincronizados automaticamente via IMAP">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse mr-1" />
+                  Gmail 24h
+                </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden xl:block">
-                Sincronizado diretamente com seus arquivos .numbers
+                Sincronizado diretamente com seus arquivos .numbers e e-mails bancários
               </p>
             </div>
           </div>
@@ -222,6 +226,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
                 <Cloud className="w-2.5 h-2.5 mr-0.5" />
                 Drive
+              </span>
+              <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300" title="Automação Gmail 24h ativa">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse mr-0.5" />
+                Gmail
               </span>
             </div>
 
