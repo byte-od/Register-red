@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { 
   Cloud, RefreshCw, AlertCircle, CheckCircle2, 
-  Calendar, FileSpreadsheet, Plus 
+  Calendar, FileSpreadsheet, Plus, Smartphone 
 } from 'lucide-react';
 
 import { 
@@ -25,16 +25,19 @@ import { NewMonthModal } from './components/NewMonthModal';
 import { ExpenseModal } from './components/ExpenseModal';
 import { IncomeModal } from './components/IncomeModal';
 import { TabletModal } from './components/TabletModal';
+import { InstallAppModal } from './components/InstallAppModal';
 import { QuickExpenseModal } from './components/QuickExpenseModal';
 import { GeminiActionCard } from './components/GeminiActionCard';
 import { GeminiGuideModal } from './components/GeminiGuideModal';
+import { UnforeseenReportView } from './components/UnforeseenReportView';
+import { usePWAInstall } from './hooks/usePWAInstall';
 
 export const App: React.FC = () => {
   const [months, setMonths] = useState<MonthListItem[]>([]);
   const [currentMonthId, setCurrentMonthId] = useState<string>('2026-10');
   const [currentMonth, setCurrentMonth] = useState<MonthData | null>(null);
   const [overview, setOverview] = useState<OverviewStats | null>(null);
-  const [activeTab, setActiveTab] = useState<'month' | 'history'>('month');
+  const [activeTab, setActiveTab] = useState<'month' | 'unforeseen' | 'history'>('month');
   
   const [loading, setLoading] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -64,8 +67,12 @@ export const App: React.FC = () => {
   // Modals
   const [isNewMonthModalOpen, setIsNewMonthModalOpen] = useState(false);
   const [isTabletModalOpen, setIsTabletModalOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isQuickExpenseModalOpen, setIsQuickExpenseModalOpen] = useState(false);
   const [isGeminiGuideOpen, setIsGeminiGuideOpen] = useState(false);
+
+  // PWA Install
+  const { deferredPrompt, isStandalone, isMobile } = usePWAInstall();
   const [expenseModalConfig, setExpenseModalConfig] = useState<{
     isOpen: boolean;
     categoryId?: string;
@@ -429,6 +436,7 @@ export const App: React.FC = () => {
         onSelectMonth={handleSelectMonth}
         onOpenNewMonthModal={() => setIsNewMonthModalOpen(true)}
         onOpenTabletModal={() => setIsTabletModalOpen(true)}
+        onOpenInstallModal={() => setIsInstallModalOpen(true)}
         onSyncDrive={handleSyncDrive}
         isSyncing={isSyncing}
         activeTab={activeTab}
@@ -467,6 +475,17 @@ export const App: React.FC = () => {
               Carregando dados das planilhas do Google Drive...
             </p>
           </div>
+        ) : activeTab === 'unforeseen' ? (
+          <UnforeseenReportView
+            currentMonthId={currentMonthId}
+            months={months}
+            onSelectMonth={handleSelectMonth}
+            onOpenQuickExpense={() => setIsQuickExpenseModalOpen(true)}
+            onDeleteExpense={handleDeleteExpense}
+            onMoveItemCategory={handleMoveItemCategory}
+            availableCategories={currentMonth?.categories || []}
+            showToast={showToast}
+          />
         ) : activeTab === 'history' ? (
           <HistoryView
             months={months}
@@ -480,6 +499,13 @@ export const App: React.FC = () => {
             <SummaryCards
               summary={currentMonth.summary}
               monthTitle={currentMonth.title}
+              unforeseenTotal={
+                (currentMonth.categories.find((c) => c.id.toLowerCase() === 'gastos')?.total || 0) +
+                currentMonth.categories
+                  .filter((c) => c.id.toLowerCase() !== 'gastos')
+                  .reduce((acc, c) => acc + c.items.filter((it) => !it.is_recurring).reduce((s, it) => s + it.amount, 0), 0)
+              }
+              onOpenUnforeseenReport={() => setActiveTab('unforeseen')}
             />
 
             {/* Gemini & Quick Action CTAs */}
@@ -534,6 +560,7 @@ export const App: React.FC = () => {
                 setExpenseModalConfig({ isOpen: true, categoryId: catId, item: null })
               }
               onOpenQuickExpense={() => setIsQuickExpenseModalOpen(true)}
+              onOpenUnforeseenReport={() => setActiveTab('unforeseen')}
               onQuickAddDirect={handleSaveQuickExpense}
               onMoveItemCategory={handleMoveItemCategory}
             />
@@ -575,6 +602,14 @@ export const App: React.FC = () => {
       <TabletModal
         isOpen={isTabletModalOpen}
         onClose={() => setIsTabletModalOpen(false)}
+        onOpenInstallModal={() => setIsInstallModalOpen(true)}
+      />
+
+      <InstallAppModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+        deferredPrompt={deferredPrompt}
+        onInstallSuccess={() => showToast('Aplicativo instalado com sucesso!', 'success')}
       />
 
       <QuickExpenseModal
@@ -588,6 +623,8 @@ export const App: React.FC = () => {
         onClose={() => setIsGeminiGuideOpen(false)}
         serverUrl={window.location.origin}
       />
+
+
 
     </div>
   );

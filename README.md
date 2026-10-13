@@ -47,6 +47,16 @@ Acesse no seu navegador: **[http://localhost:8000](http://localhost:8000)**
    - Download da planilha Apple Numbers (`.numbers`).
    - Download de planilha Excel estilizada (`.xlsx`).
 
+6. **Relatório Completo de Gastos Imprevistos**:
+   - Aba dedicada **Imprevistos** na barra de navegação superior e atalhos rápidos nos cards de resumo.
+   - Auditoria e raio-x completo de compras pontuais e saídas não previstas.
+   - Classificação automática em sub-naturezas temáticas (Alimentação/Delivery, Transporte, Saúde/Farmácia, Compras/Varejo, Transferências/PIX).
+   - Indicadores executivos: Total de imprevistos, % das despesas totais, ticket médio, maior gasto e impacto no saldo líquido.
+   - Diagnóstico Inteligente & Dicas Financeiras personalizadas.
+   - Gráficos analíticos: Distribuição por subcategoria, Top 5 maiores imprevistos, concentração diária e comparativo histórico mês a mês.
+   - Tabela interativa com busca, filtros por subcategoria, ordenação e opção de promover despesa avulsa a recorrente.
+   - Exportação dedicada em Excel (`.xlsx`) e layout limpo para impressão e geração de PDF via navegador.
+
 ---
 
 ## 🛠️ Tecnologias Utilizadas

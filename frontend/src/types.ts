@@ -104,3 +104,80 @@ export interface RecentAction {
   details?: string | null;
   timestamp?: string | null;
 }
+
+export interface UnforeseenItem {
+  id: string;
+  name: string;
+  amount: number;
+  paid: boolean;
+  due_day?: string;
+  notes?: string;
+  original_category_id: string;
+  original_category_name: string;
+  subcategory_id: string;
+  subcategory_name: string;
+  subcategory_color: string;
+  subcategory_icon: string;
+}
+
+export interface UnforeseenSubcategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  bg_class: string;
+  total: number;
+  percentage: number;
+  count: number;
+  items: UnforeseenItem[];
+}
+
+export interface UnforeseenDailyItem {
+  day: number;
+  date: string;
+  total: number;
+  count: number;
+  items: UnforeseenItem[];
+}
+
+export interface UnforeseenComparisonItem {
+  month_id: string;
+  month_title: string;
+  year: number;
+  month_number: number;
+  total_unforeseen: number;
+  total_expenses: number;
+  percentage_of_expenses: number;
+  count: number;
+  is_current: boolean;
+}
+
+export interface UnforeseenInsight {
+  type: 'warning' | 'info' | 'tip' | 'success';
+  title: string;
+  message: string;
+}
+
+export interface UnforeseenReportData {
+  month_id: string;
+  month_title: string;
+  year: number;
+  month_number: number;
+  total_unforeseen: number;
+  total_expenses: number;
+  percentage_of_expenses: number;
+  total_income: number;
+  current_balance: number;
+  balance_without_unforeseen: number;
+  unforeseen_count: number;
+  average_ticket: number;
+  highest_item: UnforeseenItem | null;
+  lowest_item: UnforeseenItem | null;
+  subcategories: UnforeseenSubcategory[];
+  daily_distribution: UnforeseenDailyItem[];
+  top_items: UnforeseenItem[];
+  history_comparison: UnforeseenComparisonItem[];
+  insights: UnforeseenInsight[];
+  items: UnforeseenItem[];
+}
+

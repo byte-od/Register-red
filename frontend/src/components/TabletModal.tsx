@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, Tablet, Copy, Check, Wifi, QrCode } from 'lucide-react';
+import { X, Tablet, Copy, Check, Wifi, QrCode, Smartphone } from 'lucide-react';
 
 interface TabletModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenInstallModal?: () => void;
 }
 
-export const TabletModal: React.FC<TabletModalProps> = ({ isOpen, onClose }) => {
+export const TabletModal: React.FC<TabletModalProps> = ({ isOpen, onClose, onOpenInstallModal }) => {
   const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -68,7 +69,7 @@ export const TabletModal: React.FC<TabletModalProps> = ({ isOpen, onClose }) => 
           {/* Wi-Fi Alert */}
           <div className="flex items-center justify-center space-x-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
             <Wifi className="w-4 h-4 text-emerald-500" />
-            <span>Certifique-se de que o tablet está no mesmo Wi-Fi que o Mac</span>
+            <span>Certifique-se de que o dispositivo está no mesmo Wi-Fi que o Mac</span>
           </div>
 
           {/* QR Code Container */}
@@ -81,7 +82,7 @@ export const TabletModal: React.FC<TabletModalProps> = ({ isOpen, onClose }) => 
               />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-              Aponte a câmera do seu tablet para conectar instantaneamente
+              Aponte a câmera do seu tablet ou celular para conectar
             </p>
           </div>
 
@@ -113,6 +114,35 @@ export const TabletModal: React.FC<TabletModalProps> = ({ isOpen, onClose }) => 
               </button>
             </div>
           </div>
+
+          {/* PWA Install Promo */}
+          {onOpenInstallModal && (
+            <div className="bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/80 rounded-2xl p-3 flex items-center justify-between text-left">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Smartphone className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                    Instalar como App
+                  </h4>
+                  <p className="text-[11px] text-emerald-700/90 dark:text-emerald-400">
+                    Use em tela cheia direto da tela inicial
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenInstallModal();
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-xs shrink-0"
+              >
+                Como instalar
+              </button>
+            </div>
+          )}
 
         </div>
 

@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#064e3b" />
+      <stop offset="100%" stop-color="#022c22" />
+    </linearGradient>
+
+    <!-- Emerald Glow Gradient -->
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <!-- Accent Amber Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+
+    <!-- Drop Shadows -->
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base / App Icon Shape -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bgGrad)" />
+  <rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="4" />
+
+  <!-- Inner Ambient Glow Circle -->
+  <circle cx="256" cy="230" r="170" fill="#10b981" opacity="0.18" filter="url(#glow)" />
+
+  <!-- Sheet & Spreadsheets Plate -->
+  <g filter="url(#shadow)">
+    <!-- Main Sheet Card -->
+    <rect x="96" y="86" width="320" height="340" rx="36" fill="#1e293b" stroke="rgba(255,255,255,0.15)" stroke-width="3" />
+
+    <!-- Top Header Bar of Sheet (Numbers Green Style) -->
+    <path d="M96 122 C96 102, 112 86, 132 86 L380 86 C400 86, 416 102, 416 122 L416 160 L96 160 Z" fill="url(#emeraldGrad)" />
+
+    <!-- Header Grid Dots / Indicators -->
+    <circle cx="132" cy="123" r="8" fill="#ffffff" opacity="0.9" />
+    <circle cx="160" cy="123" r="8" fill="#ffffff" opacity="0.6" />
+    <circle cx="188" cy="123" r="8" fill="#ffffff" opacity="0.6" />
+    
+    <!-- Header Title Bar Mockup -->
+    <rect x="230" y="117" width="140" height="12" rx="6" fill="#ffffff" opacity="0.85" />
+
+    <!-- Grid Table Cells -->
+    <!-- Row 1 -->
+    <rect x="124" y="186" width="76" height="48" rx="14" fill="#334155" opacity="0.6" />
+    <rect x="216" y="186" width="172" height="48" rx="14" fill="url(#emeraldGrad)" opacity="0.85" />
+    <circle cx="162" cy="210" r="10" fill="#64748b" />
+    <rect x="238" y="204" width="100" height="12" rx="6" fill="#ffffff" />
+
+    <!-- Row 2 -->
+    <rect x="124" y="250" width="76" height="48" rx="14" fill="#334155" opacity="0.6" />
+    <rect x="216" y="250" width="172" height="48" rx="14" fill="#334155" opacity="0.6" />
+    <circle cx="162" cy="274" r="10" fill="#64748b" />
+    <rect x="238" y="268" width="130" height="12" rx="6" fill="#94a3b8" />
+
+    <!-- Row 3 -->
+    <rect x="124" y="314" width="76" height="48" rx="14" fill="#334155" opacity="0.6" />
+    <rect x="216" y="314" width="172" height="48" rx="14" fill="#334155" opacity="0.6" />
+    <circle cx="162" cy="338" r="10" fill="#64748b" />
+    <rect x="238" y="332" width="80" height="12" rx="6" fill="#94a3b8" />
+
+    <!-- Chart / Spark Bar overlay (Bottom Right) -->
+    <rect x="124" y="380" width="264" height="16" rx="8" fill="#0f172a" opacity="0.7" />
+    <rect x="124" y="380" width="180" height="16" rx="8" fill="url(#emeraldGrad)" />
+  </g>
+
+  <!-- Floating Badge Symbol: Lightning / Growth (Bottom Right) -->
+  <g filter="url(#shadow)">
+    <circle cx="384" cy="384" r="62" fill="url(#accentGrad)" />
+    <circle cx="384" cy="384" r="58" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.4" />
+    <!-- Lightning Icon -->
+    <path d="M388 344 L356 388 L380 388 L376 424 L412 376 L388 376 Z" fill="#ffffff" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />
+  </g>
+
+  <!-- Apple Numbers Badge Ring Style (Top Left) -->
+  <g filter="url(#shadow)">
+    <circle cx="108" cy="108" r="32" fill="#10b981" />
+    <path d="M96 108 L104 116 L120 100" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+</svg>

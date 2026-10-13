@@ -38,3 +38,8 @@ frontend/dist-ssr/
 .idea/
 *.swp
 *.swo
+
+# SSL / TLS Certificates and Keys
+*.crt
+*.key
+*.pem

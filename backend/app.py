@@ -21,6 +21,7 @@ try:
     from backend.services.excel_service import generate_excel_workbook
     from backend.services.gmail_watcher import gmail_watcher
     from backend.services.action_history import action_history
+    from backend.services.unforeseen_service import build_unforeseen_report, generate_unforeseen_excel
 except ImportError:
     from models.schema import (
         MonthData, MonthListItem, CreateMonthRequest, SyncResult, ExpenseItem, ExpenseCategory, IncomeItem
@@ -29,6 +30,7 @@ except ImportError:
     from services.excel_service import generate_excel_workbook
     from services.gmail_watcher import gmail_watcher
     from services.action_history import action_history
+    from services.unforeseen_service import build_unforeseen_report, generate_unforeseen_excel
 
 app = FastAPI(title="Gestão Financeira & Planilhas Numbers", version="1.0.0")
 
@@ -271,6 +273,51 @@ def export_numbers(month_id: str):
         media_type="application/vnd.apple.numbers"
     )
 
+@app.get("/api/reports/unforeseen")
+def get_unforeseen_report(month_id: Optional[str] = Query(None)):
+    if not month_id:
+        months_list = numbers_manager.list_months()
+        if any(m.id == "2026-10" for m in months_list):
+            month_id = "2026-10"
+        elif months_list:
+            month_id = months_list[0].id
+        else:
+            month_id = "2026-10"
+
+    month = numbers_manager.get_month(month_id)
+    if not month:
+        raise HTTPException(status_code=404, detail="Mês não encontrado")
+
+    report = build_unforeseen_report(month, numbers_manager.months)
+    return report
+
+@app.get("/api/reports/unforeseen/export/excel")
+def export_unforeseen_excel(month_id: Optional[str] = Query(None)):
+    if not month_id:
+        months_list = numbers_manager.list_months()
+        if any(m.id == "2026-10" for m in months_list):
+            month_id = "2026-10"
+        elif months_list:
+            month_id = months_list[0].id
+        else:
+            month_id = "2026-10"
+
+    month = numbers_manager.get_month(month_id)
+    if not month:
+        raise HTTPException(status_code=404, detail="Mês não encontrado")
+
+    report = build_unforeseen_report(month, numbers_manager.months)
+    buffer = generate_unforeseen_excel(report)
+    filename = f"Relatorio_Imprevistos_{month.title}.xlsx"
+    headers = {
+        'Content-Disposition': f'attachment; filename="{filename}"'
+    }
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers
+    )
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename.endswith(".numbers"):
@@ -453,7 +500,11 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         origem = (m_inc_voice.group(2) or "Receita Extra").strip(" .")
         return {"action": "income", "name": origem, "amount": amt}
 
-    # 1. Read / Resumo
+    # 1. Unforeseen Report / Gastos Imprevistos
+    if any(k in cmd_lower for k in ['imprevisto', 'imprevistos', 'gastos imprevistos', 'não previstos', 'nao previstos']):
+        return {'action': 'unforeseen_report'}
+
+    # 1b. Read / Resumo
     if any(k in cmd_lower for k in ['resumo', 'quanto gastei', 'quanto falta', 'saldo', 'relatorio', 'relatório', 'briefing', 'ler contas', 'minhas despesas']):
         return {'action': 'read'}
         
@@ -572,6 +623,23 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             "month_title": month.title,
             "summary": month.summary.model_dump(),
             "categories": cats_breakdown
+        }
+
+    elif action in ["unforeseen_report", "imprevistos"]:
+        report = build_unforeseen_report(month, numbers_manager.months)
+        high_txt = f" O maior imprevisto foi '{report['highest_item']['name']}' de R$ {report['highest_item']['amount']:,.2f}." if report.get("highest_item") else ""
+        speech = (
+            f"Em {month.title}, você registrou {report['unforeseen_count']} gastos imprevistos somando "
+            f"R$ {report['total_unforeseen']:,.2f}, o que representa {report['percentage_of_expenses']}% de todas as despesas.{high_txt}"
+        )
+        return {
+            "success": True,
+            "action": "unforeseen_report",
+            "message": speech,
+            "speech_text": speech,
+            "month_id": month.id,
+            "month_title": month.title,
+            "report": report
         }
 
     elif action == "pay":
@@ -985,6 +1053,16 @@ def gemini_tools():
                         "paid": {"type": "boolean", "description": "True para paga, False para pendente"}
                     },
                     "required": ["name"]
+                }
+            },
+            {
+                "name": "unforeseen_report",
+                "description": "Retorna o relatório completo sobre os gastos imprevistos e não planejados do mês, com impacto no orçamento, subcategorias e ranking.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "month_id": {"type": "string", "description": "ID do mês (opcional, padrão mês atual)"}
+                    }
                 }
             }
         ]

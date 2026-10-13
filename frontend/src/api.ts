@@ -1,4 +1,4 @@
-import { MonthData, MonthListItem, CreateMonthPayload, OverviewStats, RecentAction } from './types';
+import { MonthData, MonthListItem, CreateMonthPayload, OverviewStats, RecentAction, UnforeseenReportData } from './types';
 
 const API_BASE = '/api';
 
@@ -109,6 +109,17 @@ export async function fetchRecentActions(limit: number = 8, monthId?: string): P
   if (!res.ok) throw new Error('Falha ao carregar ações recentes');
   const data = await res.json();
   return data.actions || [];
+}
+
+export async function fetchUnforeseenReport(monthId?: string): Promise<UnforeseenReportData> {
+  const url = `${API_BASE}/reports/unforeseen${monthId ? `?month_id=${encodeURIComponent(monthId)}` : ''}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Falha ao carregar relatório de gastos imprevistos');
+  return res.json();
+}
+
+export function getUnforeseenExcelExportUrl(monthId?: string): string {
+  return `${API_BASE}/reports/unforeseen/export/excel${monthId ? `?month_id=${encodeURIComponent(monthId)}` : ''}`;
 }
 
 export function formatBRL(value: number): string {

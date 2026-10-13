@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Plus, Search, Check, Edit2, Trash2, Home, User, 
-  CreditCard, Tag, Repeat, Zap, Calendar, DollarSign, X, ArrowRight
+  CreditCard, Tag, Repeat, Zap, Calendar, DollarSign, X, ArrowRight, BarChart2
 } from 'lucide-react';
 import { ExpenseCategory, ExpenseItem } from '../types';
 import { formatBRL, formatDateShort } from '../api';
@@ -14,6 +14,7 @@ interface ExpenseSectionProps {
   onDeleteExpense: (catId: string, itemId: string) => void;
   onAddExpense: (catId: string) => void;
   onOpenQuickExpense: () => void;
+  onOpenUnforeseenReport?: () => void;
   onQuickAddDirect: (expense: {
     name: string;
     amount: number;
@@ -44,6 +45,7 @@ export const ExpenseSection: React.FC<ExpenseSectionProps> = ({
   onDeleteExpense,
   onAddExpense,
   onOpenQuickExpense,
+  onOpenUnforeseenReport,
   onQuickAddDirect,
   onMoveItemCategory,
 }) => {
@@ -285,15 +287,29 @@ export const ExpenseSection: React.FC<ExpenseSectionProps> = ({
 
                   <div className="flex items-center space-x-1.5">
                     {isGastos ? (
-                      <button
-                        type="button"
-                        onClick={onOpenQuickExpense}
-                        title="Adicionar novo gasto rápido"
-                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-all hover:scale-105 active:scale-95"
-                      >
-                        <Zap className="w-3.5 h-3.5 mr-1 fill-white" />
-                        <span>+ Gasto Rápido</span>
-                      </button>
+                      <>
+                        {onOpenUnforeseenReport && (
+                          <button
+                            type="button"
+                            onClick={onOpenUnforeseenReport}
+                            title="Ver relatório detalhado sobre os gastos imprevistos"
+                            className="inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 shadow-xs transition-all hover:scale-105 active:scale-95"
+                          >
+                            <BarChart2 className="w-3.5 h-3.5 mr-1 text-amber-500" />
+                            <span className="hidden sm:inline">Relatório de Imprevistos</span>
+                            <span className="sm:hidden">Relatório</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={onOpenQuickExpense}
+                          title="Adicionar novo gasto rápido"
+                          className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-all hover:scale-105 active:scale-95"
+                        >
+                          <Zap className="w-3.5 h-3.5 mr-1 fill-white" />
+                          <span>+ Gasto Rápido</span>
+                        </button>
+                      </>
                     ) : (
                       <button
                         type="button"
