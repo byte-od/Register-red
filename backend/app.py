@@ -410,12 +410,15 @@ def clean_email_html(raw_text: str) -> str:
     # Remove rodapés promocionais, legais e de descadastro comuns em bancos para não poluir o parsing
     footer_patterns = [
         r"(?i)\s*(?:não deseja receber mais nossos e-?mails\?|clique aqui para se descadastrar|para se descadastrar\b).*",
+        r"(?i)\s*(?:voc[êe]|voce)\s+recebeu\s+este\s+e-?mail\s+porque.*",
         r"(?i)\s*nu pagamentos s\.a\..*",
         r"(?i)\s*faça parte da nucommunity.*",
         r"(?i)\s*caso a solução não tenha sido satisfatória.*",
         r"(?i)\s*dúvidas\?\s+fale com nosso time.*",
         r"(?i)\s*você já experimentou receber dinheiro através do pix\?.*",
-        r"(?i)\s*esta mensagem foi enviada por.*"
+        r"(?i)\s*esta mensagem foi enviada por.*",
+        r"(?i)\s*transparência é importante para nós.*",
+        r"(?i)\s*veja a nossa política de privacidade.*"
     ]
     for fp in footer_patterns:
         clean = re.sub(fp, "", clean)
@@ -445,7 +448,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         "você recebeu uma transferência", "voce recebeu uma transferencia",
         "você recebeu um pix", "voce recebeu um pix",
         "você recebeu um depósito", "voce recebeu um deposito",
-        "você recebeu", "voce recebeu",
+        "você recebeu r$", "voce recebeu r$",
         "pix recebido", "depósito recebido", "deposito recebido",
         "valor recebido", "recebimento de pix", "recebimento de transferência",
         "recebimento de transferencia", "te enviou um pix", "te enviou uma transferência",
@@ -455,9 +458,13 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     is_outgoing = any(k in cmd_lower for k in [
         "você transferiu", "voce transferiu",
         "transferência enviada", "transferencia enviada",
-        "pix enviado", "você pagou", "voce pagou",
-        "pagamento realizado", "compra aprovada",
-        "compra no débito", "compra no debito",
+        "transferência realizada", "transferencia realizada",
+        "transferência feita", "transferencia feita",
+        "pix enviado", "pix realizado", "pix feito",
+        "valor enviado", "valor pago",
+        "você pagou", "voce pagou",
+        "pagamento realizado", "pagamento aprovado", "pagamento confirmado",
+        "compra aprovada", "compra no débito", "compra no debito",
         "compra no crédito", "compra no credito",
         "boleto pago"
     ])
@@ -540,7 +547,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         return {"action": "income", "name": final_name, "amount": val_inc or 0.0}
 
     # 0b. Detecção de Despesas Bancárias / Nubank (Destinatário geralmente após 'para' ou 'em')
-    CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/-]"
+    CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/\.-]"
     DEST_BLACKLIST = [
         "se descadastrar", "descadastrar", "cancelar inscrição", "cancelar inscricao",
         "receber pelo pix", "receber dinheiro", "receber transfer",
@@ -574,9 +581,9 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
 
     # Nu Empresas / Nubank / Transferência / Pix enviado para [FAVORECIDO]
     if not bank_dest:
-        m_transf = re.search(r"(?:transfer[êe]ncia\s+(?:entre\s+contas\s+(?:do\s+nubank\s+)?para|para|enviada\s+para)|pix\s+enviado\s+para)\s+(" + CHARS + r"+?)(?:\s+(?:foi\s+realizada|no\s+valor|com\s+sucesso)|\.|$)", cmd, re.I | re.S)
+        m_transf = re.search(r"(?:transfer[êe]ncia\s+(?:entre\s+contas\s+(?:do\s+nubank\s+)?para|para|enviada\s+para)|pix\s+enviado\s+para)\s+(" + CHARS + r"+?)(?=\s+(?:foi\s+realizada|no\s+valor|com\s+sucesso)|(?:\s*[\n]|$))", cmd, re.I | re.S)
         if m_transf:
-            bank_dest = m_transf.group(1).strip(" .:-")
+            bank_dest = m_transf.group(1).strip(" :-")
 
     # Pix Automático Nubank: "Seu Pix Automático para [FAVORECIDO]"
     if not bank_dest:
@@ -591,7 +598,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             bank_dest = m_pagou.group(1).strip(" .:-")
 
     # Genérico bancário: qualquer frase bancária contendo envio "para [FAVORECIDO]"
-    if not bank_dest and amt_bank is not None and any(k in cmd_lower for k in ["transferência enviada", "transferencia enviada", "transferiu", "enviou", "pix enviado", "pagamento realizado", "pagou"]):
+    if not bank_dest and amt_bank is not None and any(k in cmd_lower for k in ["transferência enviada", "transferencia enviada", "transferência realizada", "transferencia realizada", "transferiu", "enviou", "pix enviado", "pix realizado", "valor enviado", "valor pago", "pagamento realizado", "pagou"]):
         m_gen = re.search(r"\bpara\s+(" + CHARS + r"+?)(?=(?:\s+(?:no\s+valor|valor\s+de|valor\s+enviado|foi\s+realizada|foi\s+conclu[íi]d[ao]|com\s+sucesso))|(?:\s*[\.\n]|$))", cmd, re.I)
         if m_gen:
             cand = m_gen.group(1).strip(" .:-")
@@ -603,8 +610,11 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             bank_dest = None
 
     if bank_dest and amt_bank is not None and amt_bank > 0.0:
-        bank_dest = re.sub(r"\s+", " ", bank_dest).strip(" .:-")
-        bank_dest = re.split(r"(?i)\s+(?:no\s+dia|às\s+\d|\d{1,2}\s+[a-z]{3}\s+às)", bank_dest)[0].strip(" .:-")
+        bank_dest = re.split(r"(?i)\s+(?:no\s+dia|às\s+\d|\d{1,2}\s+[a-z]{3}\s+às)", bank_dest)[0]
+        bank_dest = re.sub(r"\s+", " ", bank_dest).strip(" :-")
+        if bank_dest.endswith(".") and not re.search(r"\b[A-Za-z]\.[A-Za-z]\.$", bank_dest):
+            bank_dest = bank_dest.rstrip(".")
+        bank_dest = bank_dest.strip()
         return {
             "action": "create",
             "name": bank_dest,
@@ -901,7 +911,7 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
         BILL_ALIASES = {
             "luz": ["enel", "cpfl", "cemig", "eletropaulo", "energia", "luz", "energisa", "neoenergia", "copel", "light"],
             "agua": ["agua", "água", "sabesp", "sanepar", "copasa", "caesb", "dae", "saae", "corsan", "cedae"],
-            "internet": ["internet", "fibra", "vero", "desktop", "claro net", "provedor", "starlink", "oi fibra"],
+            "internet": ["internet", "fibra", "vero", "desktop", "claro net", "provedor", "starlink", "oi fibra", "nio", "niointernet", "nio internet", "nio fibra", "client co", "rede nordeste", "servicos de rede"],
             "aluguel": ["aluguel", "imobiliaria", "imobiliária", "proprietario", "proprietário", "locacao", "locação", "imoveis", "imóveis", "matinhos"],
             "condominio": ["condominio", "condomínio", "administradora"],
             "gas": ["gas", "gás", "ultragaz", "liquigas", "copagaz", "supergasbras", "nacional gas"],

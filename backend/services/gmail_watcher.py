@@ -91,20 +91,22 @@ def is_financial_email(sender: str, subject: str) -> bool:
         "transferência recebida", "transferencia recebida",
         "você recebeu uma transferência", "voce recebeu uma transferencia",
         "você recebeu um pix", "voce recebeu um pix",
-        "você recebeu", "voce recebeu",
         "pix enviado", "pix realizado", "pix recebido", "pix automático", "pix automatico",
         "compra aprovada", "compra no débito", "compra no debito", "compra no crédito", "compra no credito",
-        "pagamento realizado", "pagamento de boleto", "pagamento da conta", "pagamento aprovado", "pagamento confirmado",
+        "pagamento realizado", "pagamento de boleto", "pagamento da conta realizado", "pagamento da conta aprovado", "pagamento aprovado", "pagamento confirmado",
         "comprovante de transferência", "comprovante de transferencia",
         "comprovante de pagamento", "comprovante pix", "comprovante de pix",
         "boleto pago", "boleto liquidado", "fatura paga"
     ]
     is_confirm_subject = any(p in sub_low for p in confirm_patterns)
 
-    # Ignora avisos administrativos, faturas a vencer, ou códigos de segurança
+    # Ignora avisos administrativos, falhas de cobrança, faturas a vencer, ou códigos de segurança
     ignore_keywords = [
         "lembrete", "aviso de fatura", "sua fatura fechou", "segurança", 
-        "código de acesso", "codigo", "atrasado", "sua compra chegou", "finalize a sua compra"
+        "código de acesso", "codigo", "atrasado", "sua compra chegou", "finalize a sua compra",
+        "falha no pagamento", "falha", "não conseguimos efetuar", "nao conseguimos efetuar",
+        "pagamento não foi processado", "pagamento nao foi processado", "recusado", "cancelado",
+        "segunda via", "novo boleto"
     ]
     if any(ign in sub_low for ign in ignore_keywords):
         return False
