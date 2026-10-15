@@ -85,6 +85,7 @@ def toggle_paid(month_id: str, item_id: str, paid: bool):
     
     found_it = None
     found_cat = None
+    found = False
     for cat in month.categories:
         for it in cat.items:
             if it.id == item_id:
@@ -856,15 +857,26 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
         }
 
     elif action in ["income", "receita"]:
-        if not name:
-            name = "Receita Extra"
-        if amount is None or amount <= 0:
-            return {"success": False, "message": "Por favor, informe o valor recebido."}
+        clean_amount = round(float(amount), 2)
+        norm_name = name.strip().lower()
+
+        # 1. Ignora transferências entre contas próprias (titular = Julio Cesar)
+        if any(self_kw in norm_name for self_kw in ["julio cesar", "julio cesar da costa"]):
+            msg = f"Transferência entre contas próprias ({name} de R$ {clean_amount:,.2f}) detectada. Nenhuma receita duplicada adicionada."
+            logger.info(msg)
+            return {"success": True, "action": "ignore", "message": msg, "speech_text": msg, "summary": month.summary.model_dump()}
+
+        # 2. Evita duplicar receita já orçada no mês com o mesmo valor exato (ex: Bv vale R$ 4.200)
+        existing_match = next((inc for inc in month.incomes if abs(inc.amount - clean_amount) < 0.01), None)
+        if existing_match:
+            msg = f"Receita de R$ {clean_amount:,.2f} já estava prevista no mês como '{existing_match.name}'. Mantida sem duplicidade."
+            logger.info(msg)
+            return {"success": True, "action": "reconciled", "message": msg, "speech_text": msg, "summary": month.summary.model_dump()}
 
         new_inc = IncomeItem(
             id=f"inc_{int(datetime.now().timestamp()*1000)}",
             name=name.strip(),
-            amount=round(float(amount), 2),
+            amount=clean_amount,
             day=due_day or datetime.now().strftime("%Y-%m-%d")
         )
         month.incomes.append(new_inc)
