@@ -75,14 +75,21 @@ def is_financial_email(sender: str, subject: str) -> bool:
     s_low = sender.lower()
     sub_low = subject.lower()
 
-    # Filtra remetentes bancários e carteiras digitais conhecidas
-    bank_domains = [
-        "nubank.com.br", "inter.co", "bancointer.com.br", "itau.com.br", 
-        "bradesco.com.br", "santander.com.br", "c6bank.com.br", "bb.com.br", 
-        "caixa.gov.br", "mercadopago.com.br", "pagseguro.com.br", "picpay.com", 
-        "asaas.com", "infinitepay.io", "stone.com.br", "sicoob.com.br", "sicredi.com.br"
+    # O usuário determinou filtrar EXCLUSIVAMENTE e-mails do Nubank
+    is_nubank = any(b in s_low for b in ["@nubank.com.br", "nubank.com.br"])
+    if not is_nubank:
+        return False
+
+    # Ignora avisos administrativos, falhas de cobrança, faturas a vencer, ou códigos de segurança
+    ignore_keywords = [
+        "lembrete", "aviso de fatura", "sua fatura fechou", "segurança", 
+        "código de acesso", "codigo", "atrasado", "sua compra chegou", "finalize a sua compra",
+        "falha no pagamento", "falha", "não conseguimos efetuar", "nao conseguimos efetuar",
+        "pagamento não foi processado", "pagamento nao foi processado", "recusado", "cancelado",
+        "segunda via", "novo boleto", "desconto especial", "novidade", "limite", "empréstimo", "emprestimo"
     ]
-    is_bank_sender = any(b in s_low for b in bank_domains)
+    if any(ign in sub_low for ign in ignore_keywords):
+        return False
 
     # Padrões obrigatórios de confirmação no assunto
     confirm_patterns = [
@@ -98,23 +105,10 @@ def is_financial_email(sender: str, subject: str) -> bool:
         "comprovante de pagamento", "comprovante pix", "comprovante de pix",
         "boleto pago", "boleto liquidado", "fatura paga"
     ]
-    is_confirm_subject = any(p in sub_low for p in confirm_patterns)
-
-    # Ignora avisos administrativos, falhas de cobrança, faturas a vencer, ou códigos de segurança
-    ignore_keywords = [
-        "lembrete", "aviso de fatura", "sua fatura fechou", "segurança", 
-        "código de acesso", "codigo", "atrasado", "sua compra chegou", "finalize a sua compra",
-        "falha no pagamento", "falha", "não conseguimos efetuar", "nao conseguimos efetuar",
-        "pagamento não foi processado", "pagamento nao foi processado", "recusado", "cancelado",
-        "segunda via", "novo boleto"
-    ]
-    if any(ign in sub_low for ign in ignore_keywords):
-        return False
-
-    if is_bank_sender and any(k in sub_low for k in ["transferência", "transferencia", "pix", "compra", "pagamento", "comprovante", "boleto"]):
+    if any(p in sub_low for p in confirm_patterns):
         return True
 
-    return is_confirm_subject
+    return any(k in sub_low for k in ["transferência", "transferencia", "pix", "compra", "pagamento", "comprovante", "boleto"])
 
 class GmailWatcher:
     def __init__(self):
@@ -169,7 +163,7 @@ class GmailWatcher:
             mail.login(self.user, self.password)
             mail.select("INBOX")
 
-            status, data = mail.search(None, "UNSEEN")
+            status, data = mail.search(None, 'UNSEEN', 'FROM', '"nubank.com.br"')
             if status != "OK" or not data or not data[0]:
                 self.last_check = datetime.now()
                 self.last_status = "Conectado (Sem novos e-mails)"
