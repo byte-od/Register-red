@@ -406,7 +406,21 @@ def clean_email_html(raw_text: str) -> str:
     clean = re.sub(r"\s+", " ", clean).strip()
     # Corrige espaçamento antes da vírgula decimal: ex "R$ 96 ,99" -> "R$ 96,99"
     clean = re.sub(r"(r\$\s*[\d.]+)\s*([,.])\s*(\d{1,2})\b", r"\1\2\3", clean, flags=re.I)
-    return clean
+
+    # Remove rodapés promocionais, legais e de descadastro comuns em bancos para não poluir o parsing
+    footer_patterns = [
+        r"(?i)\s*(?:não deseja receber mais nossos e-?mails\?|clique aqui para se descadastrar|para se descadastrar\b).*",
+        r"(?i)\s*nu pagamentos s\.a\..*",
+        r"(?i)\s*faça parte da nucommunity.*",
+        r"(?i)\s*caso a solução não tenha sido satisfatória.*",
+        r"(?i)\s*dúvidas\?\s+fale com nosso time.*",
+        r"(?i)\s*você já experimentou receber dinheiro através do pix\?.*",
+        r"(?i)\s*esta mensagem foi enviada por.*"
+    ]
+    for fp in footer_patterns:
+        clean = re.sub(fp, "", clean)
+
+    return clean.strip()
 
 def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     cmd = clean_email_html(cmd)
@@ -425,14 +439,116 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         except Exception:
             amt_bank = None
 
-    # 0a. Recebimento de valores / Pix recebido / Transferência recebida
-    m_inc_nu = re.search(r"(?:voc[êe]\s+recebeu\s+(?:uma\s+transfer[êe]ncia|um\s+pix|um\s+dep[óo]sito)?\s*(?:de\s+)?|transfer[êe]ncia\s+recebida\s+de\s+|pix\s+recebido(?::|\s+de)?\s*)r\$\s*([\d.,]+)(?:\s+(?:de|por)\s+(.+?))?(?:\.|$)", cmd, re.I)
-    if m_inc_nu:
-        origem = (m_inc_nu.group(2) or "Depósito / Pix").strip(" .")
-        return {"action": "income", "name": f"Recebido: {origem}", "amount": amt_bank or 0.0}
+    # 0a. Recebimento de valores / Pix recebido / Transferência recebida / Depósito
+    is_incoming = any(k in cmd_lower for k in [
+        "transferência recebida", "transferencia recebida",
+        "você recebeu uma transferência", "voce recebeu uma transferencia",
+        "você recebeu um pix", "voce recebeu um pix",
+        "você recebeu um depósito", "voce recebeu um deposito",
+        "você recebeu", "voce recebeu",
+        "pix recebido", "depósito recebido", "deposito recebido",
+        "valor recebido", "recebimento de pix", "recebimento de transferência",
+        "recebimento de transferencia", "te enviou um pix", "te enviou uma transferência",
+        "te enviou uma transferencia", "te transferiu"
+    ])
+
+    is_outgoing = any(k in cmd_lower for k in [
+        "você transferiu", "voce transferiu",
+        "transferência enviada", "transferencia enviada",
+        "pix enviado", "você pagou", "voce pagou",
+        "pagamento realizado", "compra aprovada",
+        "compra no débito", "compra no debito",
+        "compra no crédito", "compra no credito",
+        "boleto pago"
+    ])
+
+    if is_incoming and not is_outgoing:
+        # Extração de valor específico de recebimento se disponível
+        m_val_inc = re.search(r"(?:valor\s+recebido|no\s+valor(?:\s+de)?|valor:?)\s*r\$\s*([\d.,]+)", cmd, re.I)
+        val_inc = amt_bank
+        if m_val_inc:
+            v_str = m_val_inc.group(1).replace(".", "").replace(",", ".")
+            try:
+                val_inc = float(v_str)
+            except Exception:
+                pass
+
+        sender = None
+
+        # Padrão 1 (Nubank / Geral): 'Você recebeu uma transferência pelo Pix de [NOME] e o valor...'
+        m_s1 = re.search(
+            r"(?:voc[êe]\s+recebeu\s+(?:uma\s+transfer[êe]ncia|um\s+pix|um\s+dep[óo]sito)?(?:\s+pelo\s+pix)?\s+de|transfer[êe]ncia\s+recebida\s+(?:pelo\s+pix\s+)?de|pix\s+recebido\s+(?:pelo\s+pix\s+)?de|recebido\s+de)\s+([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)(?=(?:\s+(?:e\s+o\s+valor|no\s+valor|valor\s+recebido|já\s+está|disponível))|(?:\s*[\.\n]|$))",
+            cmd,
+            re.I
+        )
+        if m_s1:
+            sender = m_s1.group(1).strip()
+
+        # Padrão 2: '[NOME] te enviou um Pix / te transferiu'
+        if not sender:
+            m_s2 = re.search(r"([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)\s+te\s+(?:enviou|transferiu)\s+(?:um\s+pix|uma\s+transfer[êe]ncia|r\$)", cmd, re.I)
+            if m_s2:
+                sender = m_s2.group(1).strip()
+
+        # Padrão 3: 'Pagador: [NOME]' ou 'Remetente: [NOME]'
+        if not sender:
+            m_s3 = re.search(r"(?:pagador|remetente|origem|nome\s+do\s+pagador):\s*([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)(?=(?:\s+(?:cpf|cnpj|institui[çc][ãa]o|valor|chave))|(?:\s*[\.\n]|$))", cmd, re.I)
+            if m_s3:
+                sender = m_s3.group(1).strip()
+
+        # Padrão 4: '... de [NOME] no valor de R$ ...'
+        if not sender:
+            m_s4 = re.search(r"\bde\s+([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)(?=\s+(?:no\s+valor|valor\s+recebido|r\$|\.|\n|$))", cmd, re.I)
+            if m_s4:
+                cand = m_s4.group(1).strip()
+                if cand.lower() not in ["uma", "um", "sua", "seu", "conta", "valor"]:
+                    sender = cand
+
+        # Blacklist de termos de rodapé ou botões que nunca são nomes de remetente
+        DEST_BLACKLIST = [
+            "se descadastrar", "descadastrar", "cancelar inscrição", "cancelar inscricao",
+            "receber pelo pix", "receber dinheiro", "receber transfer",
+            "mais informações", "mais informacoes", "saber mais", "saiba mais",
+            "segurança", "seguranca", "dúvidas", "duvidas", "ouvidoria", "atendimento",
+            "central pix", "fale com", "falar com", "equipe nubank", "nucommunity",
+            "nossos emails", "nossos e-mails", "política de privacidade", "termos de uso"
+        ]
+
+        if sender:
+            sender = re.sub(r"\s+", " ", sender).strip(" .:-")
+            sender = re.split(r"(?i)\s+(?:no\s+dia|às\s+\d|\d{1,2}\s+[a-z]{3}\s+às)", sender)[0].strip(" .:-")
+            if any(b in sender.lower() for b in DEST_BLACKLIST) or len(sender) < 3:
+                sender = None
+
+        is_pix = "pix" in cmd_lower
+        is_dep = any(d in cmd_lower for d in ["depósito", "deposito"])
+
+        if sender:
+            if sender.lower().startswith(("pix", "recebido", "transferência", "transferencia", "depósito", "deposito")):
+                final_name = sender
+            else:
+                prefix = "Pix" if is_pix else ("Depósito" if is_dep else "Recebido")
+                final_name = f"{prefix}: {sender}"
+        else:
+            if is_pix:
+                final_name = "Pix Recebido"
+            elif is_dep:
+                final_name = "Depósito Recebido"
+            else:
+                final_name = "Transferência Recebida"
+
+        return {"action": "income", "name": final_name, "amount": val_inc or 0.0}
 
     # 0b. Detecção de Despesas Bancárias / Nubank (Destinatário geralmente após 'para' ou 'em')
     CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/-]"
+    DEST_BLACKLIST = [
+        "se descadastrar", "descadastrar", "cancelar inscrição", "cancelar inscricao",
+        "receber pelo pix", "receber dinheiro", "receber transfer",
+        "mais informações", "mais informacoes", "saber mais", "saiba mais",
+        "segurança", "seguranca", "dúvidas", "duvidas", "ouvidoria", "atendimento",
+        "central pix", "fale com", "falar com", "equipe nubank", "nucommunity",
+        "nossos emails", "nossos e-mails", "política de privacidade", "termos de uso"
+    ]
     bank_dest = None
     bank_cat = "gastos"
 
@@ -474,11 +590,17 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         if m_pagou:
             bank_dest = m_pagou.group(1).strip(" .:-")
 
-    # Genérico bancário: qualquer frase bancária contendo "para [FAVORECIDO]"
-    if not bank_dest and amt_bank is not None and any(k in cmd_lower for k in ["nubank", "transferência", "transferencia", "pix", "comprovante", "pagamento"]):
+    # Genérico bancário: qualquer frase bancária contendo envio "para [FAVORECIDO]"
+    if not bank_dest and amt_bank is not None and any(k in cmd_lower for k in ["transferência enviada", "transferencia enviada", "transferiu", "enviou", "pix enviado", "pagamento realizado", "pagou"]):
         m_gen = re.search(r"\bpara\s+(" + CHARS + r"+?)(?=(?:\s+(?:no\s+valor|valor\s+de|valor\s+enviado|foi\s+realizada|foi\s+conclu[íi]d[ao]|com\s+sucesso))|(?:\s*[\.\n]|$))", cmd, re.I)
         if m_gen:
-            bank_dest = m_gen.group(1).strip(" .:-")
+            cand = m_gen.group(1).strip(" .:-")
+            if not any(b in cand.lower() for b in DEST_BLACKLIST):
+                bank_dest = cand
+
+    if bank_dest:
+        if any(b in bank_dest.lower() for b in DEST_BLACKLIST) or len(bank_dest.strip()) < 3:
+            bank_dest = None
 
     if bank_dest and amt_bank is not None and amt_bank > 0.0:
         bank_dest = re.sub(r"\s+", " ", bank_dest).strip(" .:-")
@@ -491,6 +613,15 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             "paid": True,
             "notes": "Nubank Auto"
         }
+
+    # Bloqueia que e-mails bancários não reconhecidos virem gastos avulsos corrompidos
+    is_bank_notification = any(k in cmd_lower for k in [
+        "nubank", "banco inter", "itau", "bradesco", "santander", "instituição de pagamento",
+        "transferência recebida", "transferencia recebida", "transferência enviada", "transferencia enviada",
+        "comprovante pix", "comprovante de transferência"
+    ])
+    if is_bank_notification and not any(k in cmd_lower for k in ["adicionar", "criar", "lance", "novo gasto", "resumo", "saldo", "pagar", "quitei", "deletar", "excluir"]):
+        return {"action": "none", "message": "Notificação bancária sem ação financeira reconhecida."}
 
     # 0c. Comandos de voz de receita: "Recebi 500 reais de freela", "Entrou 300 reais", etc.
     m_inc_voice = re.search(r"(?:recebi|entrou|ganhei|nova\s+receita|adicionar\s+receita|receita\s+de)\s+(?:r\$\s*)?([\d.,]+)(?:\s*reais)?(?:\s+(?:de|em|com|por)\s+(.+?))?(?:\.|$)", cmd, re.I)
@@ -597,6 +728,14 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             paid = parsed.get("paid")
 
     action = (action or "create").lower()
+
+    if action == "none":
+        msg = parsed.get("message", "Nenhuma ação financeira identificada.") if (payload.command and 'parsed' in locals()) else "Nenhuma ação financeira identificada."
+        return {
+            "success": False,
+            "action": "none",
+            "message": msg
+        }
 
     if action == "read":
         speech = (

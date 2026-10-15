@@ -89,6 +89,9 @@ def is_financial_email(sender: str, subject: str) -> bool:
         "transferência realizada", "transferencia realizada",
         "transferência enviada", "transferencia enviada",
         "transferência recebida", "transferencia recebida",
+        "você recebeu uma transferência", "voce recebeu uma transferencia",
+        "você recebeu um pix", "voce recebeu um pix",
+        "você recebeu", "voce recebeu",
         "pix enviado", "pix realizado", "pix recebido", "pix automático", "pix automatico",
         "compra aprovada", "compra no débito", "compra no debito", "compra no crédito", "compra no credito",
         "pagamento realizado", "pagamento de boleto", "pagamento da conta", "pagamento aprovado", "pagamento confirmado",
@@ -207,7 +210,8 @@ class GmailWatcher:
                         continue
 
                     cleaned = clean_email_html(body_text)
-                    payload = GeminiActionPayload(command=cleaned)
+                    full_cmd = f"{subject}. {cleaned}" if subject else cleaned
+                    payload = GeminiActionPayload(command=full_cmd)
                     action_res = execute_gemini_action(payload)
 
                     # Marca como lido e registra ID
@@ -216,7 +220,11 @@ class GmailWatcher:
                     self.save_processed_ids()
                     self.processed_count += 1
 
-                    logger.info(f"Ação concluída com sucesso: {action_res.get('message')}")
+                    if action_res.get("success"):
+                        logger.info(f"Ação concluída com sucesso: {action_res.get('message')}")
+                    else:
+                        logger.warning(f"Ação não executada ou comando ignorado: {action_res.get('message')}")
+
                     results.append({
                         "subject": subject,
                         "sender": sender,
