@@ -62,6 +62,10 @@ export const App: React.FC = () => {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', isDark ? '#0f172a' : '#ffffff');
+    }
   }, [isDark]);
 
   // Modals
@@ -427,7 +431,14 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors pb-16">
+    <div 
+      className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors pb-16 pb-safe"
+      style={{
+        paddingBottom: 'calc(4rem + max(env(safe-area-inset-bottom, 0px), 0px))',
+        paddingLeft: 'max(env(safe-area-inset-left, 0px), 0px)',
+        paddingRight: 'max(env(safe-area-inset-right, 0px), 0px)',
+      }}
+    >
       
       {/* Navbar */}
       <Navbar

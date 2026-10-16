@@ -1,5 +1,5 @@
 // Service Worker for Gestão Numbers PWA
-const CACHE_NAME = 'gestao-numbers-v1';
+const CACHE_NAME = 'gestao-numbers-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

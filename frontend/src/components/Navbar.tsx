@@ -49,7 +49,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors shadow-xs">
+    <header 
+      className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors shadow-xs pt-safe pl-safe pr-safe"
+      style={{
+        paddingTop: 'max(env(safe-area-inset-top, 0px), 0px)',
+        paddingLeft: 'max(env(safe-area-inset-left, 0px), 0px)',
+        paddingRight: 'max(env(safe-area-inset-right, 0px), 0px)',
+      }}
+    >
       <div className="max-w-7xl mx-auto px-2.5 sm:px-4 md:px-6 lg:px-8">
         
         {/* ========================================================= */}
