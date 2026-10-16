@@ -860,9 +860,9 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
         clean_amount = round(float(amount), 2)
         norm_name = name.strip().lower()
 
-        # 1. Ignora transferências entre contas próprias (titular = Julio Cesar)
-        if any(self_kw in norm_name for self_kw in ["julio cesar", "julio cesar da costa"]):
-            msg = f"Transferência entre contas próprias ({name} de R$ {clean_amount:,.2f}) detectada. Nenhuma receita duplicada adicionada."
+        # 1. Ignora transferências entre contas do casal (titular = Julio Cesar ou Camilla)
+        if any(self_kw in norm_name for self_kw in ["julio cesar", "julio cesar da costa", "camilla", "camila", "stankevicz"]):
+            msg = f"Transferência interna entre contas do casal ({name} de R$ {clean_amount:,.2f}) detectada. Nenhuma receita duplicada adicionada."
             logger.info(msg)
             return {"success": True, "action": "ignore", "message": msg, "speech_text": msg, "summary": month.summary.model_dump()}
 
@@ -873,9 +873,13 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             logger.info(msg)
             return {"success": True, "action": "reconciled", "message": msg, "speech_text": msg, "summary": month.summary.model_dump()}
 
+        inc_name = name.strip()
+        if notes and "Camilla" in notes and "camis" not in inc_name.lower():
+            inc_name = f"{inc_name} (Camis)"
+
         new_inc = IncomeItem(
             id=f"inc_{int(datetime.now().timestamp()*1000)}",
-            name=name.strip(),
+            name=inc_name,
             amount=clean_amount,
             day=due_day or datetime.now().strftime("%Y-%m-%d")
         )
@@ -1149,6 +1153,7 @@ def get_gmail_watcher_status():
     return {
         "running": gmail_watcher._running,
         "user": gmail_watcher.user,
+        "accounts": [a.get("owner") for a in getattr(gmail_watcher, "accounts", [])],
         "interval_seconds": gmail_watcher.check_interval,
         "last_check": gmail_watcher.last_check.isoformat() if gmail_watcher.last_check else None,
         "last_status": gmail_watcher.last_status,

@@ -75,9 +75,12 @@ def is_financial_email(sender: str, subject: str) -> bool:
     s_low = sender.lower()
     sub_low = subject.lower()
 
-    # O usuário determinou filtrar EXCLUSIVAMENTE e-mails do Nubank
-    is_nubank = any(b in s_low for b in ["@nubank.com.br", "nubank.com.br"])
-    if not is_nubank:
+    # Filtrar exclusivamente instituições financeiras autorizadas (Nubank e InfinitePay)
+    is_valid_bank = any(b in s_low for b in [
+        "@nubank.com.br", "nubank.com.br",
+        "@infinitepay.io", "infinitepay.io"
+    ])
+    if not is_valid_bank:
         return False
 
     # Ignora avisos administrativos, falhas de cobrança, faturas a vencer, ou códigos de segurança
@@ -86,7 +89,9 @@ def is_financial_email(sender: str, subject: str) -> bool:
         "código de acesso", "codigo", "atrasado", "sua compra chegou", "finalize a sua compra",
         "falha no pagamento", "falha", "não conseguimos efetuar", "nao conseguimos efetuar",
         "pagamento não foi processado", "pagamento nao foi processado", "recusado", "cancelado",
-        "segunda via", "novo boleto", "desconto especial", "novidade", "limite", "empréstimo", "emprestimo"
+        "segunda via", "novo boleto", "desconto especial", "novidade", "limite", "empréstimo", "emprestimo",
+        "funções novas", "respostas pro seu", "sacolinha", "cobranças de outubro", "confira como ficam",
+        "divulgação", "reputação"
     ]
     if any(ign in sub_low for ign in ignore_keywords):
         return False
@@ -103,17 +108,19 @@ def is_financial_email(sender: str, subject: str) -> bool:
         "pagamento realizado", "pagamento de boleto", "pagamento da conta realizado", "pagamento da conta aprovado", "pagamento aprovado", "pagamento confirmado",
         "comprovante de transferência", "comprovante de transferencia",
         "comprovante de pagamento", "comprovante pix", "comprovante de pix",
-        "boleto pago", "boleto liquidado", "fatura paga"
+        "boleto pago", "boleto liquidado", "fatura paga",
+        "venda aprovada", "venda realizada", "venda concluída", "venda concluida",
+        "você vendeu", "voce vendeu", "pagamento recebido"
     ]
     if any(p in sub_low for p in confirm_patterns):
         return True
 
-    return any(k in sub_low for k in ["transferência", "transferencia", "pix", "compra", "pagamento", "comprovante", "boleto"])
+    return any(k in sub_low for k in ["transferência", "transferencia", "pix", "compra", "pagamento", "comprovante", "boleto", "venda"])
 
 class GmailWatcher:
     def __init__(self):
-        self.user = os.environ.get("GMAIL_USER", "reisfilho1116@gmail.com")
-        self.password = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "").strip()
+        self.accounts = self._load_accounts()
+        self.user = ", ".join([a["user"] for a in self.accounts]) if self.accounts else ""
         self.check_interval = int(os.environ.get("GMAIL_CHECK_INTERVAL_SECONDS", "15"))
         self.processed_ids: Set[str] = set()
         self._running = False
@@ -122,6 +129,27 @@ class GmailWatcher:
         self.last_status: str = "Inativo"
         self.processed_count: int = 0
         self.load_processed_ids()
+
+    def _load_accounts(self) -> List[Dict[str, str]]:
+        load_env_file()
+        accounts = []
+        u1 = os.environ.get("GMAIL_USER", "reisfilho1116@gmail.com").strip()
+        p1 = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "").strip()
+        if u1 and p1:
+            accounts.append({"user": u1, "password": p1, "owner": "Julio"})
+
+        u2 = os.environ.get("GMAIL_USER_2", "").strip()
+        p2 = os.environ.get("GMAIL_APP_PASSWORD_2", "").replace(" ", "").strip()
+        if u2 and p2:
+            accounts.append({"user": u2, "password": p2, "owner": "Camilla"})
+
+        for i in range(3, 10):
+            ui = os.environ.get(f"GMAIL_USER_{i}", "").strip()
+            pi = os.environ.get(f"GMAIL_APP_PASSWORD_{i}", "").replace(" ", "").strip()
+            if ui and pi:
+                accounts.append({"user": ui, "password": pi, "owner": f"Conta {i}"})
+
+        return accounts
 
     def load_processed_ids(self):
         os.makedirs(os.path.dirname(PROCESSED_FILE), exist_ok=True)
@@ -142,8 +170,9 @@ class GmailWatcher:
             logger.error(f"Erro ao salvar processed_ids: {e}")
 
     def check_new_emails(self) -> List[Dict[str, Any]]:
-        if not self.user or not self.password:
-            self.last_status = "Credenciais não configuradas no .env"
+        self.accounts = self._load_accounts()
+        if not self.accounts:
+            self.last_status = "Nenhuma credencial configurada no .env"
             return []
 
         try:
@@ -156,94 +185,99 @@ class GmailWatcher:
             logger.error(f"Erro ao importar dependências do app: {e}")
             return []
 
-        results = []
-        mail = None
-        try:
-            mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=20)
-            mail.login(self.user, self.password)
-            mail.select("INBOX")
+        all_results = []
+        search_domains = ["nubank.com.br", "infinitepay.io"]
 
-            status, data = mail.search(None, 'UNSEEN', 'FROM', '"nubank.com.br"')
-            if status != "OK" or not data or not data[0]:
-                self.last_check = datetime.now()
-                self.last_status = "Conectado (Sem novos e-mails)"
+        for acc in self.accounts:
+            user = acc["user"]
+            password = acc["password"]
+            owner = acc["owner"]
+            mail = None
+            try:
+                mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=20)
+                mail.login(user, password)
+                mail.select("INBOX")
+
+                for s_domain in search_domains:
+                    status, data = mail.search(None, 'UNSEEN', 'FROM', f'"{s_domain}"')
+                    if status != "OK" or not data or not data[0]:
+                        continue
+
+                    email_ids = data[0].split()
+                    for eid in email_ids:
+                        try:
+                            res, hdata = mail.fetch(eid, "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID SUBJECT FROM DATE)])")
+                            if res != "OK" or not hdata or not hdata[0] or not isinstance(hdata[0], tuple):
+                                continue
+
+                            h_msg = email.message_from_bytes(hdata[0][1])
+                            msg_id = (h_msg.get("Message-ID") or "").strip()
+                            subject = decode_mime_words(h_msg.get("Subject", ""))
+                            sender = decode_mime_words(h_msg.get("From", ""))
+
+                            id_key = f"{user}:{msg_id}" if msg_id else f"{user}:mid_{eid.decode()}"
+                            if id_key in self.processed_ids:
+                                mail.store(eid, "+FLAGS", "\\Seen")
+                                continue
+
+                            if not is_financial_email(sender, subject):
+                                # Marca como lido avisos de marketing e registra ID
+                                mail.store(eid, "+FLAGS", "\\Seen")
+                                self.processed_ids.add(id_key)
+                                continue
+
+                            logger.info(f"[{owner}] Processando e-mail financeiro: [{subject}] de [{sender}]")
+
+                            res, bdata = mail.fetch(eid, "(RFC822)")
+                            if res != "OK" or not bdata or not bdata[0] or not isinstance(bdata[0], tuple):
+                                continue
+
+                            full_msg = email.message_from_bytes(bdata[0][1])
+                            body_text = extract_email_body(full_msg)
+                            if not body_text:
+                                continue
+
+                            cleaned = clean_email_html(body_text)
+                            full_cmd = f"{subject}. {cleaned}" if subject else cleaned
+
+                            acc_note = f"Auto ({owner})" if owner != "Julio" else "Nubank Auto"
+                            payload = GeminiActionPayload(command=full_cmd, notes=acc_note)
+                            action_res = execute_gemini_action(payload)
+
+                            mail.store(eid, "+FLAGS", "\\Seen")
+                            self.processed_ids.add(id_key)
+                            self.save_processed_ids()
+                            self.processed_count += 1
+
+                            if action_res.get("success"):
+                                logger.info(f"[{owner}] Ação concluída com sucesso: {action_res.get('message')}")
+                            else:
+                                logger.warning(f"[{owner}] Ação não executada ou comando ignorado: {action_res.get('message')}")
+
+                            all_results.append({
+                                "account": user,
+                                "owner": owner,
+                                "subject": subject,
+                                "sender": sender,
+                                "result": action_res
+                            })
+                        except Exception as inner_e:
+                            logger.error(f"[{owner}] Erro ao processar e-mail {eid}: {inner_e}")
+
                 mail.logout()
-                return []
 
-            email_ids = data[0].split()
-            for eid in email_ids:
-                try:
-                    # Busca cabeçalhos sem marcar como lido
-                    res, hdata = mail.fetch(eid, "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID SUBJECT FROM DATE)])")
-                    if res != "OK" or not hdata or not hdata[0] or not isinstance(hdata[0], tuple):
-                        continue
+            except Exception as e:
+                logger.warning(f"Falha ao conectar no Gmail IMAP ({user}): {e}")
+                if mail:
+                    try:
+                        mail.logout()
+                    except Exception:
+                        pass
 
-                    h_msg = email.message_from_bytes(hdata[0][1])
-                    msg_id = (h_msg.get("Message-ID") or "").strip()
-                    subject = decode_mime_words(h_msg.get("Subject", ""))
-                    sender = decode_mime_words(h_msg.get("From", ""))
-
-                    # Se já foi processado anteriormente
-                    id_key = msg_id if msg_id else f"mid_{eid.decode()}"
-                    if id_key in self.processed_ids:
-                        mail.store(eid, "+FLAGS", "\\Seen")
-                        continue
-
-                    # Verifica se é e-mail financeiro / bancário
-                    if not is_financial_email(sender, subject):
-                        continue
-
-                    logger.info(f"Processando e-mail financeiro: [{subject}] de [{sender}]")
-
-                    # Busca corpo completo
-                    res, bdata = mail.fetch(eid, "(RFC822)")
-                    if res != "OK" or not bdata or not bdata[0] or not isinstance(bdata[0], tuple):
-                        continue
-
-                    full_msg = email.message_from_bytes(bdata[0][1])
-                    body_text = extract_email_body(full_msg)
-                    if not body_text:
-                        continue
-
-                    cleaned = clean_email_html(body_text)
-                    full_cmd = f"{subject}. {cleaned}" if subject else cleaned
-                    payload = GeminiActionPayload(command=full_cmd)
-                    action_res = execute_gemini_action(payload)
-
-                    # Marca como lido e registra ID
-                    mail.store(eid, "+FLAGS", "\\Seen")
-                    self.processed_ids.add(id_key)
-                    self.save_processed_ids()
-                    self.processed_count += 1
-
-                    if action_res.get("success"):
-                        logger.info(f"Ação concluída com sucesso: {action_res.get('message')}")
-                    else:
-                        logger.warning(f"Ação não executada ou comando ignorado: {action_res.get('message')}")
-
-                    results.append({
-                        "subject": subject,
-                        "sender": sender,
-                        "result": action_res
-                    })
-
-                except Exception as inner_e:
-                    logger.error(f"Erro ao processar e-mail {eid}: {inner_e}")
-
-            mail.logout()
-            self.last_check = datetime.now()
-            self.last_status = f"Conectado (Processados nesta rodada: {len(results)})"
-
-        except Exception as e:
-            self.last_status = f"Erro de conexão: {str(e)}"
-            logger.warning(f"Falha ao conectar no Gmail IMAP: {e}")
-            if mail:
-                try:
-                    mail.logout()
-                except Exception:
-                    pass
-
-        return results
+        self.last_check = datetime.now()
+        active_owners = ", ".join([a["owner"] for a in self.accounts])
+        self.last_status = f"Conectado ({active_owners} - Processados nesta rodada: {len(all_results)})"
+        return all_results
 
     def _loop(self):
         logger.info(f"[GmailWatcher] Loop 24h ativado. Verificando a cada {self.check_interval}s...")
