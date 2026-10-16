@@ -30,7 +30,9 @@ import { QuickExpenseModal } from './components/QuickExpenseModal';
 import { GeminiActionCard } from './components/GeminiActionCard';
 import { GeminiGuideModal } from './components/GeminiGuideModal';
 import { UnforeseenReportView } from './components/UnforeseenReportView';
+import { NotificationModal } from './components/NotificationModal';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import { usePushNotifications } from './hooks/usePushNotifications';
 
 export const App: React.FC = () => {
   const [months, setMonths] = useState<MonthListItem[]>([]);
@@ -72,10 +74,12 @@ export const App: React.FC = () => {
   const [isNewMonthModalOpen, setIsNewMonthModalOpen] = useState(false);
   const [isTabletModalOpen, setIsTabletModalOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [isQuickExpenseModalOpen, setIsQuickExpenseModalOpen] = useState(false);
   const [isGeminiGuideOpen, setIsGeminiGuideOpen] = useState(false);
 
-  // PWA Install
+  // Push Notifications & PWA Install
+  const { isSubscribed: isPushSubscribed } = usePushNotifications();
   const { deferredPrompt, isStandalone, isMobile } = usePWAInstall();
   const [expenseModalConfig, setExpenseModalConfig] = useState<{
     isOpen: boolean;
@@ -448,6 +452,8 @@ export const App: React.FC = () => {
         onOpenNewMonthModal={() => setIsNewMonthModalOpen(true)}
         onOpenTabletModal={() => setIsTabletModalOpen(true)}
         onOpenInstallModal={() => setIsInstallModalOpen(true)}
+        onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
+        isPushSubscribed={isPushSubscribed}
         onSyncDrive={handleSyncDrive}
         isSyncing={isSyncing}
         activeTab={activeTab}
@@ -621,6 +627,12 @@ export const App: React.FC = () => {
         onClose={() => setIsInstallModalOpen(false)}
         deferredPrompt={deferredPrompt}
         onInstallSuccess={() => showToast('Aplicativo instalado com sucesso!', 'success')}
+      />
+
+      <NotificationModal
+        isOpen={isNotificationModalOpen}
+        onClose={() => setIsNotificationModalOpen(false)}
+        onToast={showToast}
       />
 
       <QuickExpenseModal

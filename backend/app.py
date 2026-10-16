@@ -21,6 +21,7 @@ try:
     from backend.services.excel_service import generate_excel_workbook
     from backend.services.gmail_watcher import gmail_watcher
     from backend.services.action_history import action_history
+    from backend.services.push_service import push_service
     from backend.services.unforeseen_service import build_unforeseen_report, generate_unforeseen_excel
 except ImportError:
     from models.schema import (
@@ -30,6 +31,7 @@ except ImportError:
     from services.excel_service import generate_excel_workbook
     from services.gmail_watcher import gmail_watcher
     from services.action_history import action_history
+    from services.push_service import push_service
     from services.unforeseen_service import build_unforeseen_report, generate_unforeseen_excel
 
 app = FastAPI(title="Gestão Financeira & Planilhas Numbers", version="1.0.0")
@@ -903,6 +905,14 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             source="gemini",
             status="Recebido"
         )
+        try:
+            push_service.send_push_to_all(
+                title="💰 Nova Receita Registrada",
+                body=f"{new_inc.name}: +R$ {new_inc.amount:,.2f} | Saldo: R$ {updated.summary.balance:,.2f}",
+                url="/"
+            )
+        except Exception:
+            pass
         return {
             "success": True,
             "action": "income",
@@ -1022,6 +1032,14 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
                 source="gmail" if notes and "Nubank" in notes else "gemini",
                 status="Baixa automática"
             )
+            try:
+                push_service.send_push_to_all(
+                    title="✅ Conta Paga Reconciliada",
+                    body=f"{matched_pending.name}: R$ {matched_pending.amount:,.2f} baixada na categoria {matched_pending_cat.name} | Saldo: R$ {updated.summary.balance:,.2f}",
+                    url="/"
+                )
+            except Exception:
+                pass
             return {
                 "success": True,
                 "action": "pay",
@@ -1102,6 +1120,14 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             source="gmail" if notes and "Nubank" in notes else "gemini",
             status="Quitado" if item_paid else "Pendente"
         )
+        try:
+            push_service.send_push_to_all(
+                title="💸 Novo Gasto Registrado",
+                body=f"{new_item.name}: -R$ {new_item.amount:,.2f} ({target_cat.name}) | Saldo: R$ {updated.summary.balance:,.2f}",
+                url="/"
+            )
+        except Exception:
+            pass
         return {
             "success": True,
             "action": "create",
@@ -1178,6 +1204,71 @@ def get_recent_actions(limit: int = 10, month_id: Optional[str] = None):
     return {
         "success": True,
         "actions": action_history.get_recent(limit=limit, month_data=month_data)
+    }
+
+# --- PUSH NOTIFICATIONS ENDPOINTS ---
+class PushSubscribeRequest(BaseModel):
+    subscription: Dict[str, Any]
+    user_agent: Optional[str] = None
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str
+
+class PushTestRequest(BaseModel):
+    title: Optional[str] = "Register Red 🔔"
+    body: Optional[str] = "As notificações push estão ativas e funcionando perfeitamente no seu dispositivo!"
+
+@app.get("/api/push/vapid-public-key")
+def get_vapid_public_key():
+    return {
+        "public_key": push_service.public_key
+    }
+
+@app.get("/api/push/status")
+def get_push_status():
+    return {
+        "subscriptions_count": len(push_service.subscriptions),
+        "subscriptions": [
+            {
+                "endpoint": s.get("endpoint", "")[:35] + "...",
+                "user_agent": s.get("user_agent", ""),
+                "created_at": s.get("created_at")
+            }
+            for s in push_service.subscriptions
+        ]
+    }
+
+@app.post("/api/push/subscribe")
+def subscribe_push(req: PushSubscribeRequest):
+    success = push_service.add_subscription(req.subscription, req.user_agent)
+    if success:
+        push_service.send_push_to_all(
+            title="Register Red Ativado! 🔔",
+            body="Notificações ativadas! Você receberá alertas das compras e faturas sincronizadas.",
+            url="/"
+        )
+    return {
+        "success": success,
+        "subscriptions_count": len(push_service.subscriptions)
+    }
+
+@app.post("/api/push/unsubscribe")
+def unsubscribe_push(req: PushUnsubscribeRequest):
+    push_service.remove_subscription(req.endpoint)
+    return {
+        "success": True,
+        "subscriptions_count": len(push_service.subscriptions)
+    }
+
+@app.post("/api/push/test")
+def test_push(req: PushTestRequest):
+    title = req.title or "Register Red 🔔"
+    body = req.body or "Notificação push de teste funcionando com sucesso!"
+    push_service.send_push_to_all(title=title, body=body, url="/")
+    return {
+        "success": True,
+        "sent_to_count": len(push_service.subscriptions),
+        "message": f"Disparo realizado para {len(push_service.subscriptions)} dispositivo(s)!"
     }
 
 @app.get("/api/gemini/briefing")

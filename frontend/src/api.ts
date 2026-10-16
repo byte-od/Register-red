@@ -139,3 +139,48 @@ export function formatDateShort(dateStr?: string): string {
   }
   return dateStr;
 }
+
+// --- PUSH NOTIFICATIONS API ---
+export async function fetchVapidPublicKey(): Promise<string> {
+  const res = await fetch(`${API_BASE}/push/vapid-public-key`);
+  if (!res.ok) throw new Error('Falha ao obter chave VAPID');
+  const data = await res.json();
+  return data.public_key;
+}
+
+export async function subscribePush(subscription: any, userAgent?: string): Promise<{ success: boolean; subscriptions_count: number }> {
+  const res = await fetch(`${API_BASE}/push/subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription, user_agent: userAgent || navigator.userAgent }),
+  });
+  if (!res.ok) throw new Error('Falha ao cadastrar inscrição push');
+  return res.json();
+}
+
+export async function unsubscribePush(endpoint: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/push/unsubscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint }),
+  });
+  if (!res.ok) throw new Error('Falha ao cancelar inscrição push');
+  return res.json();
+}
+
+export async function testPushNotification(title?: string, body?: string): Promise<{ success: boolean; sent_to_count: number; message: string }> {
+  const res = await fetch(`${API_BASE}/push/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!res.ok) throw new Error('Falha ao disparar notificação de teste');
+  return res.json();
+}
+
+export async function fetchPushStatus(): Promise<{ subscriptions_count: number; subscriptions: any[] }> {
+  const res = await fetch(`${API_BASE}/push/status`);
+  if (!res.ok) throw new Error('Falha ao obter status de push');
+  return res.json();
+}
+

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Calendar, Cloud, RefreshCw, PlusCircle, Download, 
-  BarChart3, Moon, Sun, Table, FileSpreadsheet, Tablet, ChevronDown, Zap, Smartphone
+  BarChart3, Moon, Sun, Table, FileSpreadsheet, Tablet, ChevronDown, Zap, Smartphone,
+  Bell, BellRing
 } from 'lucide-react';
 import { MonthListItem } from '../types';
 
@@ -12,6 +13,8 @@ interface NavbarProps {
   onOpenNewMonthModal: () => void;
   onOpenTabletModal: () => void;
   onOpenInstallModal: () => void;
+  onOpenNotificationModal: () => void;
+  isPushSubscribed?: boolean;
   onSyncDrive: () => void;
   isSyncing: boolean;
   activeTab: 'month' | 'unforeseen' | 'history';
@@ -27,6 +30,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNewMonthModal,
   onOpenTabletModal,
   onOpenInstallModal,
+  onOpenNotificationModal,
+  isPushSubscribed,
   onSyncDrive,
   isSyncing,
   activeTab,
@@ -209,13 +214,31 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
+            {/* Push Notifications Toggle */}
+            <button
+              type="button"
+              onClick={onOpenNotificationModal}
+              title={isPushSubscribed ? "Notificações Push Ativas 🔔" : "Ativar Notificações Push"}
+              aria-label={isPushSubscribed ? "Notificações Push Ativas" : "Ativar Notificações Push"}
+              className="relative p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-all shadow-xs shrink-0 cursor-pointer"
+            >
+              {isPushSubscribed ? (
+                <>
+                  <BellRing className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                </>
+              ) : (
+                <Bell className="w-3.5 h-3.5 text-slate-500" />
+              )}
+            </button>
+
             {/* Dark Mode Toggle */}
             <button
               type="button"
               onClick={onToggleDark}
               title={isDark ? "Modo Claro" : "Modo Escuro"}
               aria-label={isDark ? "Modo Claro" : "Modo Escuro"}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-all shadow-xs shrink-0"
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-all shadow-xs shrink-0 cursor-pointer"
             >
               {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-600" />}
             </button>
@@ -249,13 +272,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
 
-            {/* Quick Actions (Theme) */}
+            {/* Quick Actions (Notifications & Theme) */}
             <div className="flex items-center space-x-1 shrink-0">
+              <button
+                type="button"
+                onClick={onOpenNotificationModal}
+                title={isPushSubscribed ? "Notificações Ativas 🔔" : "Ativar Notificações"}
+                aria-label="Notificações Push"
+                className="relative p-1.5 rounded-lg text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                {isPushSubscribed ? (
+                  <>
+                    <BellRing className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                  </>
+                ) : (
+                  <Bell className="w-3.5 h-3.5" />
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={onToggleDark}
                 title={isDark ? "Modo Claro" : "Modo Escuro"}
-                className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
                 {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5" />}
               </button>
