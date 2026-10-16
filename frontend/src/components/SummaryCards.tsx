@@ -37,9 +37,21 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
           <div className="text-2xl font-bold text-slate-900 dark:text-white">
             {formatBRL(summary.total_income)}
           </div>
-          <div className="mt-2 flex items-center text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-            <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-            <span>Previsto para {monthTitle}</span>
+          <div className="mt-2 text-xs space-y-0.5">
+            <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+              <span>Recebido até hoje:</span>
+              <span className="font-bold">{formatBRL(summary.received_income ?? summary.total_income)}</span>
+            </div>
+            {(summary.pending_income ?? 0) > 0 ? (
+              <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 font-medium">
+                <span>A receber:</span>
+                <span className="font-bold">{formatBRL(summary.pending_income ?? 0)}</span>
+              </div>
+            ) : (
+              <div className="text-slate-400 dark:text-slate-500 text-[11px]">
+                100% das receitas creditadas
+              </div>
+            )}
           </div>
         </div>
 
@@ -91,35 +103,33 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
           </div>
         </div>
 
-        {/* 5. Saldo Restante / Economia */}
+        {/* 5. Saldo Real em Caixa & Projetado */}
         <div className={`border rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow ${
           isSurplus
             ? 'bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border-emerald-300 dark:border-emerald-800'
             : 'bg-gradient-to-br from-rose-500/10 to-orange-500/5 border-rose-300 dark:border-rose-800'
         }`}>
           <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Saldo Restante</span>
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-              isSurplus ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider block">Saldo Real Hoje</span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Recebido até hoje − Pago</span>
+            </div>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+              (summary.current_balance ?? summary.balance) >= 0 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
             }`}>
               <PiggyBank className="w-4 h-4" />
             </div>
           </div>
           <div className={`text-2xl font-bold ${
-            isSurplus ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'
+            (summary.current_balance ?? summary.balance) >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'
           }`}>
-            {formatBRL(summary.balance)}
+            {formatBRL(summary.current_balance ?? summary.balance)}
           </div>
-          <div className="mt-2 flex items-center text-xs font-semibold">
-            {isSurplus ? (
-              <span className="text-emerald-700 dark:text-emerald-400 flex items-center">
-                <Sparkles className="w-3.5 h-3.5 mr-1" /> Superávit no mês
-              </span>
-            ) : (
-              <span className="text-rose-700 dark:text-rose-400 flex items-center">
-                <TrendingDown className="w-3.5 h-3.5 mr-1" /> Déficit orçamentário
-              </span>
-            )}
+          <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-xs">
+            <span className="text-slate-500 dark:text-slate-400">Projetado mês:</span>
+            <span className={`font-bold ${isSurplus ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {formatBRL(summary.balance)}
+            </span>
           </div>
         </div>
 

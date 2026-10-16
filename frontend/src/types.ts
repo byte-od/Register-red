@@ -3,6 +3,7 @@ export interface IncomeItem {
   name: string;
   amount: number;
   day?: string;
+  received?: boolean;
 }
 
 export interface ExpenseItem {
@@ -29,10 +30,17 @@ export interface ExpenseCategory {
 export interface DailyTimelineItem {
   date: string;
   total_debt: number;
+  total_income?: number;
+  balance?: number;
+  day_expense?: number;
+  day_income?: number;
 }
 
 export interface MonthSummary {
   total_income: number;
+  received_income?: number;
+  pending_income?: number;
+  current_balance?: number;
   total_expenses: number;
   total_paid: number;
   total_pending: number;
@@ -64,6 +72,9 @@ export interface MonthListItem {
   month_number: number;
   file_path?: string;
   total_income: number;
+  received_income?: number;
+  pending_income?: number;
+  current_balance?: number;
   total_expenses: number;
   total_paid: number;
   total_pending: number;

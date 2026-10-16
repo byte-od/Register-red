@@ -17,7 +17,7 @@ try:
     from backend.models.schema import (
         MonthData, MonthListItem, CreateMonthRequest, SyncResult, ExpenseItem, ExpenseCategory, IncomeItem
     )
-    from backend.services.numbers_service import numbers_manager, GOOGLE_DRIVE_DIR
+    from backend.services.numbers_service import numbers_manager, parse_day_num, GOOGLE_DRIVE_DIR
     from backend.services.excel_service import generate_excel_workbook
     from backend.services.gmail_watcher import gmail_watcher
     from backend.services.action_history import action_history
@@ -27,7 +27,7 @@ except ImportError:
     from models.schema import (
         MonthData, MonthListItem, CreateMonthRequest, SyncResult, ExpenseItem, ExpenseCategory, IncomeItem
     )
-    from services.numbers_service import numbers_manager, GOOGLE_DRIVE_DIR
+    from services.numbers_service import numbers_manager, parse_day_num, GOOGLE_DRIVE_DIR
     from services.excel_service import generate_excel_workbook
     from services.gmail_watcher import gmail_watcher
     from services.action_history import action_history
@@ -547,7 +547,24 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             else:
                 final_name = "Transferência Recebida"
 
-        return {"action": "income", "name": final_name, "amount": val_inc or 0.0}
+        # Extração de data do recebimento se contido no texto
+        extracted_day = None
+        m_dt_slash = re.search(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b", cmd)
+        if m_dt_slash:
+            d_num = int(m_dt_slash.group(1))
+            extracted_day = f"Dia {d_num:02d}"
+        else:
+            m_dt_word = re.search(r"\b(?:no\s+dia|dia)\s*(\d{1,2})\b", cmd, re.I)
+            if m_dt_word:
+                d_num = int(m_dt_word.group(1))
+                extracted_day = f"Dia {d_num:02d}"
+
+        return {
+            "action": "income",
+            "name": final_name,
+            "amount": val_inc or 0.0,
+            "due_day": extracted_day or datetime.now().strftime("%Y-%m-%d")
+        }
 
     # 0b. Detecção de Despesas Bancárias / Nubank (Destinatário geralmente após 'para' ou 'em')
     CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/\.-]"
@@ -868,12 +885,26 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             logger.info(msg)
             return {"success": True, "action": "ignore", "message": msg, "speech_text": msg, "summary": month.summary.model_dump()}
 
-        # 2. Evita duplicar receita já orçada no mês com o mesmo valor exato (ex: Bv vale R$ 4.200)
-        existing_match = next((inc for inc in month.incomes if abs(inc.amount - clean_amount) < 0.01), None)
+        inc_day_str = due_day or datetime.now().strftime("%Y-%m-%d")
+        inc_day_num = parse_day_num(inc_day_str, default_day=datetime.now().day)
+
+        # 2. Reconciliação inteligente: se já havia uma receita planejada com valor idêntico
+        # e data próxima (+- 5 dias) ou nome coincidente
+        existing_match = None
+        for inc in month.incomes:
+            if abs(inc.amount - clean_amount) < 0.01:
+                target_day_num = parse_day_num(inc.day, default_day=10)
+                if (norm_name in inc.name.lower() or inc.name.lower() in norm_name) or abs(target_day_num - inc_day_num) <= 5:
+                    existing_match = inc
+                    break
+
         if existing_match:
-            msg = f"Receita de R$ {clean_amount:,.2f} já estava prevista no mês como '{existing_match.name}'. Mantida sem duplicidade."
+            existing_match.received = True
+            existing_match.day = inc_day_str
+            updated = numbers_manager.update_month(month.id, month)
+            msg = f"Receita de R$ {clean_amount:,.2f} prevista como '{existing_match.name}' reconciliada na data {inc_day_str}."
             logger.info(msg)
-            return {"success": True, "action": "reconciled", "message": msg, "speech_text": msg, "summary": month.summary.model_dump()}
+            return {"success": True, "action": "reconciled", "message": msg, "speech_text": msg, "summary": updated.summary.model_dump()}
 
         inc_name = name.strip()
         if notes and "Camilla" in notes and "camis" not in inc_name.lower():
@@ -883,7 +914,8 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             id=f"inc_{int(datetime.now().timestamp()*1000)}",
             name=inc_name,
             amount=clean_amount,
-            day=due_day or datetime.now().strftime("%Y-%m-%d")
+            day=inc_day_str,
+            received=True
         )
         month.incomes.append(new_inc)
         updated = numbers_manager.update_month(month.id, month)

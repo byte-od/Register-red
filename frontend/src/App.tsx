@@ -559,6 +559,8 @@ export const App: React.FC = () => {
             <IncomeSection
               incomes={currentMonth.incomes}
               totalIncome={currentMonth.summary.total_income}
+              receivedIncome={currentMonth.summary.received_income}
+              pendingIncome={currentMonth.summary.pending_income}
               onAddIncome={() => setIncomeModalConfig({ isOpen: true, item: null })}
               onEditIncome={(item) => setIncomeModalConfig({ isOpen: true, item })}
               onDeleteIncome={handleDeleteIncome}

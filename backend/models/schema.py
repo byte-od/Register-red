@@ -6,6 +6,7 @@ class IncomeItem(BaseModel):
     name: str
     amount: float = 0.0
     day: Optional[str] = "Dia 10"
+    received: bool = False
 
 class ExpenseItem(BaseModel):
     id: str
@@ -30,9 +31,16 @@ class ExpenseCategory(BaseModel):
 class DailyTimelineItem(BaseModel):
     date: str
     total_debt: float = 0.0
+    total_income: float = 0.0
+    balance: float = 0.0
+    day_expense: float = 0.0
+    day_income: float = 0.0
 
 class MonthSummary(BaseModel):
     total_income: float = 0.0
+    received_income: float = 0.0
+    pending_income: float = 0.0
+    current_balance: float = 0.0
     total_expenses: float = 0.0
     total_paid: float = 0.0
     total_pending: float = 0.0
@@ -62,6 +70,9 @@ class MonthListItem(BaseModel):
     month_number: int
     file_path: Optional[str] = None
     total_income: float = 0.0
+    received_income: float = 0.0
+    pending_income: float = 0.0
+    current_balance: float = 0.0
     total_expenses: float = 0.0
     total_paid: float = 0.0
     total_pending: float = 0.0

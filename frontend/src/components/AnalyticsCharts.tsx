@@ -38,8 +38,13 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
     outros: { bg: 'bg-emerald-500', fill: '#10B981', text: 'text-emerald-500' },
   };
 
-  // Max value for daily debt curve
-  const maxDebt = Math.max(...dailyTimeline.map((d) => d.total_debt), 1);
+  // Max value for daily cash flow curve
+  const maxTimelineVal = Math.max(
+    ...dailyTimeline.map((d) => Math.max(d.total_debt, d.total_income ?? 0)),
+    1
+  );
+  const peakDebt = Math.max(...dailyTimeline.map((d) => d.total_debt), 0);
+  const peakIncome = Math.max(...dailyTimeline.map((d) => d.total_income ?? 0), 0);
   const timelinePoints = dailyTimeline.filter((_, idx) => idx % 2 === 0 || idx === dailyTimeline.length - 1);
 
   return (
@@ -148,28 +153,42 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
         </div>
       </div>
 
-      {/* 3. Daily Cumulative Debt Curve (Expenses-1) */}
+      {/* 3. Daily Cash Flow Curve (Income vs Expenses) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2 text-slate-900 dark:text-white font-bold text-base">
               <CalendarRange className="w-5 h-5 text-teal-500" />
-              <span>Cronograma Acumulado</span>
+              <span>Fluxo de Caixa</span>
             </div>
-            <span className="text-xs text-slate-400 font-medium">Dia a Dia</span>
+            {/* Legend */}
+            <div className="flex items-center space-x-3 text-[11px] font-semibold">
+              <span className="flex items-center text-emerald-600 dark:text-emerald-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1" />
+                Receitas
+              </span>
+              <span className="flex items-center text-indigo-600 dark:text-indigo-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 mr-1" />
+                Despesas
+              </span>
+            </div>
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-            Curva de compromissos financeiros ao longo do mês.
+            Evolução diária comparando receitas creditadas e despesas acumuladas.
           </p>
 
           {/* SVG Area Chart */}
           <div className="relative h-32 w-full pt-2">
             <svg className="w-full h-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
               <defs>
-                <linearGradient id="curveGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#10B981" stopOpacity="0.3" />
+                <linearGradient id="incomeCurveGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
                   <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
+                </linearGradient>
+                <linearGradient id="expenseCurveGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#6366F1" stopOpacity="0.15" />
+                  <stop offset="100%" stopColor="#6366F1" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
 
@@ -180,30 +199,30 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
               {/* Path calculation */}
               {dailyTimeline.length > 1 && (
                 <>
-                  {/* Fill Area */}
+                  {/* Fill Area - Income */}
                   <path
                     d={`
                       M 0 100
                       ${dailyTimeline
                         .map((d, i) => {
                           const x = (i / (dailyTimeline.length - 1)) * 300;
-                          const y = 100 - (d.total_debt / maxDebt) * 85;
+                          const y = 100 - ((d.total_income ?? 0) / maxTimelineVal) * 85;
                           return `L ${x.toFixed(1)} ${y.toFixed(1)}`;
                         })
                         .join(' ')}
                       L 300 100 Z
                     `}
-                    fill="url(#curveGradient)"
+                    fill="url(#incomeCurveGradient)"
                   />
 
-                  {/* Line */}
+                  {/* Line - Income */}
                   <path
                     d={`
                       M 0 100
                       ${dailyTimeline
                         .map((d, i) => {
                           const x = (i / (dailyTimeline.length - 1)) * 300;
-                          const y = 100 - (d.total_debt / maxDebt) * 85;
+                          const y = 100 - ((d.total_income ?? 0) / maxTimelineVal) * 85;
                           return `L ${x.toFixed(1)} ${y.toFixed(1)}`;
                         })
                         .join(' ')}
@@ -211,6 +230,25 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                     fill="none"
                     stroke="#10B981"
                     strokeWidth="2.5"
+                    strokeLinecap="round"
+                  />
+
+                  {/* Line - Expenses */}
+                  <path
+                    d={`
+                      M 0 100
+                      ${dailyTimeline
+                        .map((d, i) => {
+                          const x = (i / (dailyTimeline.length - 1)) * 300;
+                          const y = 100 - (d.total_debt / maxTimelineVal) * 85;
+                          return `L ${x.toFixed(1)} ${y.toFixed(1)}`;
+                        })
+                        .join(' ')}
+                    `}
+                    fill="none"
+                    stroke="#6366F1"
+                    strokeWidth="2"
+                    strokeDasharray="4 2"
                     strokeLinecap="round"
                   />
                 </>
@@ -227,10 +265,14 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
         </div>
 
         <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 flex items-center justify-between">
-          <span>Pico acumulado do mês:</span>
-          <span className="font-bold text-slate-900 dark:text-white">
-            {formatBRL(maxDebt)}
-          </span>
+          <div className="flex items-center space-x-1">
+            <span>Despesas:</span>
+            <span className="font-bold text-indigo-600 dark:text-indigo-400">{formatBRL(peakDebt)}</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <span>Receitas:</span>
+            <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatBRL(peakIncome)}</span>
+          </div>
         </div>
       </div>
 

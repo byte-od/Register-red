@@ -107,8 +107,67 @@ def parse_date_str(v: Any) -> str:
         s = s.replace(" 00:00:00", "")
     return s
 
+def parse_day_num(day_str: Optional[str], days_in_month: int = 31, default_day: int = 10) -> int:
+    if not day_str:
+        return default_day
+    s = str(day_str).strip().lower()
+    if any(k in s for k in ["anterior", "saldo", "economia", "economias", "início", "inicio"]):
+        return 1
+    m_iso = re.search(r"\b\d{4}-\d{2}-(\d{1,2})\b", s)
+    if m_iso:
+        return max(1, min(days_in_month, int(m_iso.group(1))))
+    m_slash = re.search(r"\b(\d{1,2})/\d{1,2}\b", s)
+    if m_slash:
+        return max(1, min(days_in_month, int(m_slash.group(1))))
+    m_num = re.search(r"\b(\d{1,2})\b", s)
+    if m_num:
+        return max(1, min(days_in_month, int(m_num.group(1))))
+    return default_day
+
+def is_income_received(inc: IncomeItem, month_year: int, month_number: int) -> bool:
+    if getattr(inc, "received", None) is True:
+        return True
+
+    now = datetime.now()
+    cur_year = now.year
+    cur_month = now.month
+    cur_day = now.day
+
+    # Se o mês já passou, todas já foram recebidas
+    if (month_year < cur_year) or (month_year == cur_year and month_number < cur_month):
+        return True
+    
+    # Se o mês é futuro, nenhuma foi recebida exceto economias/mês anterior
+    if (month_year > cur_year) or (month_year == cur_year and month_number > cur_month):
+        s = str(inc.day or "").lower()
+        return any(k in s for k in ["anterior", "saldo", "economia", "economias"])
+
+    # Se estamos no mês atual:
+    s = str(inc.day or "").lower()
+    if any(k in s for k in ["anterior", "saldo", "economia", "economias"]):
+        return True
+
+    day_num = parse_day_num(inc.day, days_in_month=31, default_day=10)
+    return day_num <= cur_day
+
 def calculate_summary_and_timeline(month: MonthData) -> MonthData:
+    days_in_month = 31
+    if month.month_number in [4, 6, 9, 11]:
+        days_in_month = 30
+    elif month.month_number == 2:
+        is_leap = (month.year % 4 == 0 and month.year % 100 != 0) or (month.year % 400 == 0)
+        days_in_month = 29 if is_leap else 28
+
+    # 1. Processa e ordena receitas cronologicamente pela data
+    for inc in month.incomes:
+        inc.received = is_income_received(inc, month.year, month.month_number)
+
+    month.incomes.sort(key=lambda inc: parse_day_num(inc.day, days_in_month=days_in_month, default_day=10))
+
     tot_income = sum(item.amount for item in month.incomes)
+    received_income = sum(item.amount for item in month.incomes if item.received)
+    pending_income = tot_income - received_income
+
     tot_expenses = 0.0
     tot_paid = 0.0
     tot_pending = 0.0
@@ -132,14 +191,24 @@ def calculate_summary_and_timeline(month: MonthData) -> MonthData:
         tot_pending += cat.pending_total
 
     tot_income = round(tot_income, 2)
+    received_income = round(received_income, 2)
+    pending_income = round(pending_income, 2)
     tot_expenses = round(tot_expenses, 2)
     tot_paid = round(tot_paid, 2)
     tot_pending = round(tot_pending, 2)
+
+    # Saldo Previsto no mês (todas as receitas orçadas - todas as despesas)
     balance = round(tot_income - tot_expenses, 2)
+    # Saldo Real Hoje em caixa (receitas já recebidas até hoje - despesas já pagas até hoje)
+    current_balance = round(received_income - tot_paid, 2)
+
     pct = round((tot_paid / tot_expenses * 100), 1) if tot_expenses > 0 else 0.0
 
     month.summary = MonthSummary(
         total_income=tot_income,
+        received_income=received_income,
+        pending_income=pending_income,
+        current_balance=current_balance,
         total_expenses=tot_expenses,
         total_paid=tot_paid,
         total_pending=tot_pending,
@@ -150,39 +219,34 @@ def calculate_summary_and_timeline(month: MonthData) -> MonthData:
         pending_count=total_items - paid_items
     )
 
-    # Reconstruct daily cumulative schedule
-    daily_sums: Dict[int, float] = {}
-    days_in_month = 31
-    if month.month_number in [4, 6, 9, 11]:
-        days_in_month = 30
-    elif month.month_number == 2:
-        is_leap = (month.year % 4 == 0 and month.year % 100 != 0) or (month.year % 400 == 0)
-        days_in_month = 29 if is_leap else 28
+    # 2. Constrói cronograma diário levando em conta tanto as receitas quanto as despesas dia a dia
+    daily_expense_sums: Dict[int, float] = {d: 0.0 for d in range(1, days_in_month + 1)}
+    daily_income_sums: Dict[int, float] = {d: 0.0 for d in range(1, days_in_month + 1)}
 
-    for d in range(1, days_in_month + 1):
-        daily_sums[d] = 0.0
+    for inc in month.incomes:
+        inc_day = parse_day_num(inc.day, days_in_month=days_in_month, default_day=10)
+        daily_income_sums[inc_day] += inc.amount
 
     for cat in month.categories:
         for it in cat.items:
-            day_num = 10
-            if it.due_day:
-                d_str = str(it.due_day).strip()
-                match = re.search(r"(\d{4})-(\d{2})-(\d{2})", d_str)
-                if match:
-                    day_num = int(match.group(3))
-                else:
-                    d_match = re.search(r"\b(\d{1,2})\b", d_str)
-                    if d_match:
-                        day_num = int(d_match.group(1))
-            day_num = max(1, min(days_in_month, day_num))
-            daily_sums[day_num] = daily_sums.get(day_num, 0.0) + it.amount
+            exp_day = parse_day_num(it.due_day, days_in_month=days_in_month, default_day=10)
+            daily_expense_sums[exp_day] += it.amount
 
     timeline: List[DailyTimelineItem] = []
-    cumul = 0.0
+    cumul_debt = 0.0
+    cumul_income = 0.0
     for d in range(1, days_in_month + 1):
-        cumul += daily_sums[d]
+        cumul_debt += daily_expense_sums[d]
+        cumul_income += daily_income_sums[d]
         date_str = f"{month.year:04d}-{month.month_number:02d}-{d:02d}"
-        timeline.append(DailyTimelineItem(date=date_str, total_debt=round(cumul, 2)))
+        timeline.append(DailyTimelineItem(
+            date=date_str,
+            total_debt=round(cumul_debt, 2),
+            total_income=round(cumul_income, 2),
+            balance=round(cumul_income - cumul_debt, 2),
+            day_expense=round(daily_expense_sums[d], 2),
+            day_income=round(daily_income_sums[d], 2)
+        ))
 
     month.daily_timeline = timeline
     return month
@@ -426,6 +490,9 @@ class NumbersManager:
                 month_number=m.month_number,
                 file_path=m.file_path,
                 total_income=m.summary.total_income,
+                received_income=m.summary.received_income,
+                pending_income=m.summary.pending_income,
+                current_balance=m.summary.current_balance,
                 total_expenses=m.summary.total_expenses,
                 total_paid=m.summary.total_paid,
                 total_pending=m.summary.total_pending,
