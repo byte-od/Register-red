@@ -1,14 +1,31 @@
 import React from 'react';
-import { AlertTriangle, Clock, Calendar, CheckCircle, ChevronRight } from 'lucide-react';
+import { Clock, CheckCircle } from 'lucide-react';
 import { ExpenseCategory, ExpenseItem } from '../types';
-import { formatBRL, formatDateShort } from '../api';
+import { formatBRL, displayExpenseName } from '../api';
 
 interface UpcomingAlertProps {
   categories: ExpenseCategory[];
+  year?: number;
+  monthNumber?: number;
+  monthTitle?: string;
   onTogglePaid: (itemId: string, paid: boolean) => void;
 }
 
-export const UpcomingAlert: React.FC<UpcomingAlertProps> = ({ categories, onTogglePaid }) => {
+export const UpcomingAlert: React.FC<UpcomingAlertProps> = ({ 
+  categories, 
+  year,
+  monthNumber,
+  monthTitle,
+  onTogglePaid 
+}) => {
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+
+  const isCurrentMonth = year === curYear && monthNumber === curMonth;
+  const isFutureMonth = (year ?? 0) > curYear || (year === curYear && (monthNumber ?? 0) > curMonth);
+  const isPastMonth = (year ?? 0) < curYear || (year === curYear && (monthNumber ?? 0) < curMonth);
+
   // Collect all unpaid items
   const unpaidItems: { item: ExpenseItem; categoryName: string; dayNum: number }[] = [];
 
@@ -51,11 +68,17 @@ export const UpcomingAlert: React.FC<UpcomingAlertProps> = ({ categories, onTogg
         <div className="flex items-center space-x-2 text-amber-900 dark:text-amber-200">
           <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
           <span className="font-semibold text-sm">
-            Próximos Vencimentos Prioritários ({unpaidItems.length} pendentes)
+            {isFutureMonth 
+              ? `Vencimentos Programados (${unpaidItems.length} despesas)`
+              : isPastMonth
+              ? `Contas em Aberto no Encerramento (${unpaidItems.length} pendentes)`
+              : `Próximos Vencimentos Prioritários (${unpaidItems.length} pendentes)`}
           </span>
         </div>
         <span className="text-xs text-amber-700/80 dark:text-amber-300/80">
-          Clique em &quot;Pagar&quot; para dar baixa rápida
+          {isFutureMonth
+            ? `Prévia das primeiras contas programadas para ${monthTitle || 'o mês'}`
+            : 'Clique em "Pagar" para dar baixa rápida'}
         </span>
       </div>
 
@@ -75,7 +98,7 @@ export const UpcomingAlert: React.FC<UpcomingAlertProps> = ({ categories, onTogg
                 </span>
               </div>
               <div className="text-sm font-semibold text-slate-900 dark:text-white truncate mt-0.5 flex items-center gap-1.5" title={item.name}>
-                <span className="truncate">{item.name}</span>
+                <span className="truncate">{displayExpenseName(item)}</span>
                 {item.installments_total && item.installments_total > 1 && (
                   <span className="shrink-0 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
                     {item.installments_current || 1}/{item.installments_total}

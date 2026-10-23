@@ -516,6 +516,8 @@ export const App: React.FC = () => {
             <SummaryCards
               summary={currentMonth.summary}
               monthTitle={currentMonth.title}
+              year={currentMonth.year}
+              monthNumber={currentMonth.month_number}
               unforeseenTotal={
                 (currentMonth.categories.find((c) => c.id.toLowerCase() === 'gastos')?.total || 0) +
                 currentMonth.categories
@@ -545,6 +547,9 @@ export const App: React.FC = () => {
             {/* Upcoming Bills Alert */}
             <UpcomingAlert
               categories={currentMonth.categories}
+              year={currentMonth.year}
+              monthNumber={currentMonth.month_number}
+              monthTitle={currentMonth.title}
               onTogglePaid={(itemId, paid) => handleTogglePaid(itemId, paid)}
             />
 
@@ -561,6 +566,8 @@ export const App: React.FC = () => {
               totalIncome={currentMonth.summary.total_income}
               receivedIncome={currentMonth.summary.received_income}
               pendingIncome={currentMonth.summary.pending_income}
+              year={currentMonth.year}
+              monthNumber={currentMonth.month_number}
               onAddIncome={() => setIncomeModalConfig({ isOpen: true, item: null })}
               onEditIncome={(item) => setIncomeModalConfig({ isOpen: true, item })}
               onDeleteIncome={handleDeleteIncome}
@@ -569,6 +576,8 @@ export const App: React.FC = () => {
             {/* Expenses Categorized Section */}
             <ExpenseSection
               categories={currentMonth.categories}
+              year={currentMonth.year}
+              monthNumber={currentMonth.month_number}
               onTogglePaid={handleTogglePaid}
               onToggleRecurring={handleToggleRecurring}
               onEditExpense={(catId, item) =>

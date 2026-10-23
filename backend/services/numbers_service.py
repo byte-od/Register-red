@@ -125,9 +125,6 @@ def parse_day_num(day_str: Optional[str], days_in_month: int = 31, default_day: 
     return default_day
 
 def is_income_received(inc: IncomeItem, month_year: int, month_number: int) -> bool:
-    if getattr(inc, "received", None) is True:
-        return True
-
     now = datetime.now()
     cur_year = now.year
     cur_month = now.month
@@ -137,10 +134,9 @@ def is_income_received(inc: IncomeItem, month_year: int, month_number: int) -> b
     if (month_year < cur_year) or (month_year == cur_year and month_number < cur_month):
         return True
     
-    # Se o mês é futuro, nenhuma foi recebida exceto economias/mês anterior
+    # Se o mês é futuro, nenhuma foi recebida ainda (o mês de planejamento ainda não começou)
     if (month_year > cur_year) or (month_year == cur_year and month_number > cur_month):
-        s = str(inc.day or "").lower()
-        return any(k in s for k in ["anterior", "saldo", "economia", "economias"])
+        return False
 
     # Se estamos no mês atual:
     s = str(inc.day or "").lower()
@@ -157,6 +153,12 @@ def calculate_summary_and_timeline(month: MonthData) -> MonthData:
     elif month.month_number == 2:
         is_leap = (month.year % 4 == 0 and month.year % 100 != 0) or (month.year % 400 == 0)
         days_in_month = 29 if is_leap else 28
+
+    now = datetime.now()
+    cur_year = now.year
+    cur_month = now.month
+    is_future_month = (month.year > cur_year) or (month.year == cur_year and month.month_number > cur_month)
+    is_past_month = (month.year < cur_year) or (month.year == cur_year and month.month_number < cur_month)
 
     # 1. Processa e ordena receitas cronologicamente pela data
     for inc in month.incomes:
@@ -200,7 +202,11 @@ def calculate_summary_and_timeline(month: MonthData) -> MonthData:
     # Saldo Previsto no mês (todas as receitas orçadas - todas as despesas)
     balance = round(tot_income - tot_expenses, 2)
     # Saldo Real Hoje em caixa (receitas já recebidas até hoje - despesas já pagas até hoje)
-    current_balance = round(received_income - tot_paid, 2)
+    # Para meses futuros ou passados, reflete o saldo fechado/projetado do orçamento
+    if is_future_month or is_past_month:
+        current_balance = balance
+    else:
+        current_balance = round(received_income - tot_paid, 2)
 
     pct = round((tot_paid / tot_expenses * 100), 1) if tot_expenses > 0 else 0.0
 
@@ -435,6 +441,7 @@ class NumbersManager:
                     for mid, mdata in raw.items():
                         m = MonthData(**mdata)
                         ensure_gastos_category(m)
+                        calculate_summary_and_timeline(m)
                         self.months[mid] = m
             except Exception as e:
                 print(f"Error loading cache: {e}")

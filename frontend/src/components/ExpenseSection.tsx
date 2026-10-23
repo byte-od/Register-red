@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, Search, Check, Edit2, Trash2, Home, User, 
   CreditCard, Tag, Repeat, Zap, Calendar, DollarSign, X, ArrowRight, BarChart2
 } from 'lucide-react';
 import { ExpenseCategory, ExpenseItem } from '../types';
-import { formatBRL, formatDateShort } from '../api';
+import { formatBRL, formatDateShort, displayExpenseName } from '../api';
 
 interface ExpenseSectionProps {
   categories: ExpenseCategory[];
+  year?: number;
+  monthNumber?: number;
   onTogglePaid: (itemId: string, paid: boolean) => void;
   onToggleRecurring: (itemId: string, isRecurring: boolean) => void;
   onEditExpense: (catId: string, item: ExpenseItem) => void;
@@ -39,6 +41,8 @@ const getTodayDateStr = () => {
 
 export const ExpenseSection: React.FC<ExpenseSectionProps> = ({
   categories,
+  year,
+  monthNumber,
   onTogglePaid,
   onToggleRecurring,
   onEditExpense,
@@ -52,11 +56,28 @@ export const ExpenseSection: React.FC<ExpenseSectionProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
 
+  const getDefaultDateStr = () => {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    if (year === curYear && monthNumber === curMonth) {
+      return getTodayDateStr();
+    }
+    if (year && monthNumber) {
+      return `${year}-${String(monthNumber).padStart(2, '0')}-01`;
+    }
+    return getTodayDateStr();
+  };
+
   // Inline Quick Add on "Gastos" category
   const [inlineName, setInlineName] = useState('');
   const [inlineAmount, setInlineAmount] = useState('');
-  const [inlineDate, setInlineDate] = useState(getTodayDateStr());
+  const [inlineDate, setInlineDate] = useState(getDefaultDateStr());
   const [inlineDesc, setInlineDesc] = useState('');
+
+  useEffect(() => {
+    setInlineDate(getDefaultDateStr());
+  }, [year, monthNumber]);
 
   // Modal to transform a Gastos item into a recurring item in another category
   const [moveModalItem, setMoveModalItem] = useState<ExpenseItem | null>(null);
@@ -352,7 +373,7 @@ export const ExpenseSection: React.FC<ExpenseSectionProps> = ({
                       type="date"
                       value={inlineDate}
                       onChange={(e) => setInlineDate(e.target.value)}
-                      title="Data do gasto (padrão hoje, alterável)"
+                      title="Data do lançamento"
                       className="w-32 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
                     />
                     <input
@@ -429,7 +450,7 @@ export const ExpenseSection: React.FC<ExpenseSectionProps> = ({
                                     : 'text-slate-800 dark:text-slate-200'
                                 }`}
                               >
-                                {item.name}
+                                {displayExpenseName(item)}
                               </span>
                               {item.installments_total && item.installments_total > 1 && (
                                 <span className="inline-flex items-center text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 shadow-2xs">

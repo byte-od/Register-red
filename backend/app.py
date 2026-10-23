@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, UploadFile, File, Response, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 
 try:
     from backend.models.schema import (
@@ -43,6 +43,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def force_https_on_tsnet(request: Request, call_next):
+    host = request.headers.get("host", "").lower()
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).lower()
+    if "ts.net" in host and proto == "http":
+        target = f"https://{host.split(':')[0]}{request.url.path}"
+        if request.url.query:
+            target += f"?{request.url.query}"
+        return RedirectResponse(url=target, status_code=307)
+    return await call_next(request)
 
 @app.on_event("startup")
 def startup_event():

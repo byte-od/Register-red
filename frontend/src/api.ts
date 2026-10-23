@@ -122,6 +122,16 @@ export function getUnforeseenExcelExportUrl(monthId?: string): string {
   return `${API_BASE}/reports/unforeseen/export/excel${monthId ? `?month_id=${encodeURIComponent(monthId)}` : ''}`;
 }
 
+/**
+ * Nome de exibição de uma despesa: remove o sufixo de parcela "(X/Y)" do nome
+ * quando a despesa tem parcelas, pois elas já aparecem no badge.
+ */
+export function displayExpenseName(item: { name: string; installments_total?: number | null }): string {
+  if (!item.installments_total || item.installments_total <= 1) return item.name;
+  const cleaned = item.name.replace(/\s*\(?\s*\d+\s*[/xX]\s*\d+\s*\)?\s*$/, '').trim();
+  return cleaned || item.name;
+}
+
 export function formatBRL(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',

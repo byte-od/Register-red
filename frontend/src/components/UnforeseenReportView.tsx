@@ -39,6 +39,9 @@ export const UnforeseenReportView: React.FC<UnforeseenReportViewProps> = ({
   availableCategories = [],
   showToast,
 }) => {
+  const [reportYear, reportMonthNum] = (currentMonthId || '').split('-').map(Number);
+  const now = new Date();
+  const isCurrentMonth = reportYear === now.getFullYear() && reportMonthNum === (now.getMonth() + 1);
   const [report, setReport] = useState<UnforeseenReportData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -280,7 +283,11 @@ export const UnforeseenReportView: React.FC<UnforeseenReportViewProps> = ({
                 {formatBRL(report.balance_without_unforeseen)}
               </div>
               <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center">
-                <span>Saldo sem imprevistos (hoje: {formatBRL(report.current_balance)})</span>
+                <span>
+                  {isCurrentMonth
+                    ? `Saldo sem imprevistos (hoje: ${formatBRL(report.current_balance)})`
+                    : `Saldo sem imprevistos (previsto: ${formatBRL(report.current_balance)})`}
+                </span>
               </div>
             </div>
 
