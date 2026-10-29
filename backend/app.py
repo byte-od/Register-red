@@ -496,36 +496,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
 
         sender = None
 
-        # Padrão 1 (Nubank / Geral): 'Você recebeu uma transferência pelo Pix de [NOME] e o valor...'
-        m_s1 = re.search(
-            r"(?:voc[êe]\s+recebeu\s+(?:uma\s+transfer[êe]ncia|um\s+pix|um\s+dep[óo]sito)?(?:\s+pelo\s+pix)?\s+de|transfer[êe]ncia\s+recebida\s+(?:pelo\s+pix\s+)?de|pix\s+recebido\s+(?:pelo\s+pix\s+)?de|recebido\s+de)\s+([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)(?=(?:\s+(?:e\s+o\s+valor|no\s+valor|valor\s+recebido|já\s+está|disponível))|(?:\s*[\.\n]|$))",
-            cmd,
-            re.I
-        )
-        if m_s1:
-            sender = m_s1.group(1).strip()
-
-        # Padrão 2: '[NOME] te enviou um Pix / te transferiu'
-        if not sender:
-            m_s2 = re.search(r"([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)\s+te\s+(?:enviou|transferiu)\s+(?:um\s+pix|uma\s+transfer[êe]ncia|r\$)", cmd, re.I)
-            if m_s2:
-                sender = m_s2.group(1).strip()
-
-        # Padrão 3: 'Pagador: [NOME]' ou 'Remetente: [NOME]'
-        if not sender:
-            m_s3 = re.search(r"(?:pagador|remetente|origem|nome\s+do\s+pagador):\s*([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)(?=(?:\s+(?:cpf|cnpj|institui[çc][ãa]o|valor|chave))|(?:\s*[\.\n]|$))", cmd, re.I)
-            if m_s3:
-                sender = m_s3.group(1).strip()
-
-        # Padrão 4: '... de [NOME] no valor de R$ ...'
-        if not sender:
-            m_s4 = re.search(r"\bde\s+([A-Za-zÀ-ÖØ-öø-ÿ\s\'()/-]+?)(?=\s+(?:no\s+valor|valor\s+recebido|r\$|\.|\n|$))", cmd, re.I)
-            if m_s4:
-                cand = m_s4.group(1).strip()
-                if cand.lower() not in ["uma", "um", "sua", "seu", "conta", "valor"]:
-                    sender = cand
-
-        # Blacklist de termos de rodapé ou botões que nunca são nomes de remetente
+        CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/\.-]"
         DEST_BLACKLIST = [
             "se descadastrar", "descadastrar", "cancelar inscrição", "cancelar inscricao",
             "receber pelo pix", "receber dinheiro", "receber transfer",
@@ -535,9 +506,53 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             "nossos emails", "nossos e-mails", "política de privacidade", "termos de uso"
         ]
 
+        terminators = r"(?:\s+(?:e\s+o\s+valor|no\s+valor|valor\s+recebido|j[áa]\s+est[áa]|dispon[íi]vel|r\$|\b\d{1,2}\s+[a-z]{3}\b)|(?:\.\s+[A-Z]|\n|$))"
+
+        # Padrão 1 (Nubank PJ / PF / Geral):
+        # 'Você recebeu uma transferência de [CNPJ/CPF] [NOME] e o valor já está disponível...'
+        # 'Você recebeu uma transferência pelo Pix de [NOME] no valor...'
+        # 'Transferência recebida de [NOME]...'
+        m_s1 = re.search(
+            r"(?:voc[êe]\s+recebeu\s+(?:uma\s+transfer[êe]ncia|um\s+pix|um\s+dep[óo]sito)?(?:\s+pelo\s+pix)?\s+de|transfer[êe]ncia\s+recebida\s+(?:pelo\s+pix\s+)?de|pix\s+recebido\s+(?:pelo\s+pix\s+)?de|recebido\s+de)\s+(.+?)" + terminators,
+            cmd,
+            re.I
+        )
+        if m_s1:
+            sender = m_s1.group(1).strip()
+
+        # Padrão 2: '[NOME] te enviou um Pix / te transferiu'
+        if not sender:
+            m_s2 = re.search(r"(" + CHARS + r"+?)\s+te\s+(?:enviou|transferiu)\s+(?:um\s+pix|uma\s+transfer[êe]ncia|r\$)", cmd, re.I)
+            if m_s2:
+                sender = m_s2.group(1).strip()
+
+        # Padrão 3: 'Pagador: [NOME]' ou 'Remetente: [NOME]' ou 'Origem: [NOME]'
+        if not sender:
+            m_s3 = re.search(r"(?:pagador|remetente|origem|nome\s+do\s+pagador):\s*(" + CHARS + r"+?)(?=(?:\s+(?:cpf|cnpj|institui[çc][ãa]o|valor|chave))|(?:\.\s+[A-Z]|\n|$))", cmd, re.I)
+            if m_s3:
+                sender = m_s3.group(1).strip()
+
+        # Padrão 4: '... de [NOME] no valor de R$ ...'
+        if not sender:
+            m_s4 = re.search(r"\bde\s+(" + CHARS + r"+?)(?=\s+(?:no\s+valor|valor\s+recebido|r\$|\.\s+[A-Z]|\n|$))", cmd, re.I)
+            if m_s4:
+                cand = m_s4.group(1).strip()
+                if cand.lower() not in ["uma", "um", "sua", "seu", "conta", "valor"]:
+                    sender = cand
+
         if sender:
             sender = re.sub(r"\s+", " ", sender).strip(" .:-")
             sender = re.split(r"(?i)\s+(?:no\s+dia|às\s+\d|\d{1,2}\s+[a-z]{3}\s+às)", sender)[0].strip(" .:-")
+
+            # Limpa prefixos de CNPJ/CPF se houver (ex: '62.406.088 CAMILLA STANKEVICZ REIS' -> 'CAMILLA STANKEVICZ REIS')
+            clean_name = re.sub(r"^[\d./\s-]+", "", sender).strip()
+            if clean_name and len(clean_name) >= 3:
+                sender = clean_name
+
+            # Formatação agradável (Title Case se estiver em maiúsculas)
+            if sender.isupper():
+                sender = sender.title()
+
             if any(b in sender.lower() for b in DEST_BLACKLIST) or len(sender) < 3:
                 sender = None
 
@@ -643,6 +658,15 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     if bank_dest and amt_bank is not None and amt_bank > 0.0:
         bank_dest = re.split(r"(?i)\s+(?:no\s+dia|às\s+\d|\d{1,2}\s+[a-z]{3}\s+às)", bank_dest)[0]
         bank_dest = re.sub(r"\s+", " ", bank_dest).strip(" :-")
+
+        # Limpa prefixos de CNPJ/CPF se houver (ex: 51.384.629 TATIANE... -> TATIANE...)
+        clean_bd = re.sub(r"^[\d./\s-]+", "", bank_dest).strip()
+        if clean_bd and len(clean_bd) >= 3:
+            bank_dest = clean_bd
+
+        if bank_dest.isupper():
+            bank_dest = bank_dest.title()
+
         if bank_dest.endswith(".") and not re.search(r"\b[A-Za-z]\.[A-Za-z]\.$", bank_dest):
             bank_dest = bank_dest.rstrip(".")
         bank_dest = bank_dest.strip()
