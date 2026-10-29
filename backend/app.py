@@ -560,11 +560,9 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         is_dep = any(d in cmd_lower for d in ["depósito", "deposito"])
 
         if sender:
-            if sender.lower().startswith(("pix", "recebido", "transferência", "transferencia", "depósito", "deposito")):
-                final_name = sender
-            else:
-                prefix = "Pix" if is_pix else ("Depósito" if is_dep else "Recebido")
-                final_name = f"{prefix}: {sender}"
+            # Remove qualquer prefixo "Pix: " ou "Pix " se presente
+            clean_s = re.sub(r"(?i)^pix\s*:?\s*", "", sender).strip()
+            final_name = clean_s if clean_s else sender
         else:
             if is_pix:
                 final_name = "Pix Recebido"
