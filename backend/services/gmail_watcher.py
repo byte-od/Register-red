@@ -9,7 +9,7 @@ import imaplib
 import logging
 import threading
 from email.header import decode_header
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Set, List
 
 logger = logging.getLogger("gmail_watcher")
@@ -114,10 +114,11 @@ def is_financial_email(sender: str, subject: str) -> bool:
     if any(p in sub_low for p in confirm_patterns):
         return True
 
-    return any(k in sub_low for k in ["transferência", "transferencia", "pix", "compra", "pagamento", "comprovante", "boleto", "venda"])
+    return False
 
 class GmailWatcher:
     def __init__(self):
+        self._lock = threading.Lock()
         self.accounts = self._load_accounts()
         self.user = ", ".join([a["user"] for a in self.accounts]) if self.accounts else ""
         self.check_interval = int(os.environ.get("GMAIL_CHECK_INTERVAL_SECONDS", "15"))
@@ -169,6 +170,15 @@ class GmailWatcher:
             logger.error(f"Erro ao salvar processed_ids: {e}")
 
     def check_new_emails(self) -> List[Dict[str, Any]]:
+        if not self._lock.acquire(blocking=False):
+            return []
+
+        try:
+            return self._do_check_new_emails()
+        finally:
+            self._lock.release()
+
+    def _do_check_new_emails(self) -> List[Dict[str, Any]]:
         self.accounts = self._load_accounts()
         self.user = ", ".join([a["user"] for a in self.accounts]) if self.accounts else ""
         if not self.accounts:
@@ -201,8 +211,9 @@ class GmailWatcher:
                 mail.select("INBOX")
                 connected_owners.append(owner)
 
+                since_date = (datetime.now() - timedelta(days=2)).strftime("%d-%b-%Y")
                 for s_domain in search_domains:
-                    status, data = mail.search(None, 'UNSEEN', 'FROM', f'"{s_domain}"')
+                    status, data = mail.search(None, 'UNSEEN', 'SINCE', since_date, 'FROM', f'"{s_domain}"')
                     if status != "OK" or not data or not data[0]:
                         continue
 
@@ -222,6 +233,20 @@ class GmailWatcher:
                             if id_key in self.processed_ids:
                                 mail.store(eid, "+FLAGS", "\\Seen")
                                 continue
+
+                            # Se o e-mail tiver data superior a 48 horas, ignora para não importar histórico antigo
+                            date_str = h_msg.get("Date")
+                            if date_str:
+                                try:
+                                    from email.utils import parsedate_to_datetime
+                                    msg_dt = parsedate_to_datetime(date_str)
+                                    now_dt = datetime.now(msg_dt.tzinfo)
+                                    if (now_dt - msg_dt).total_seconds() > 48 * 3600:
+                                        mail.store(eid, "+FLAGS", "\\Seen")
+                                        self.processed_ids.add(id_key)
+                                        continue
+                                except Exception as d_err:
+                                    logger.debug(f"Erro ao verificar data do e-mail: {d_err}")
 
                             if not is_financial_email(sender, subject):
                                 # Marca como lido avisos de marketing e registra ID
@@ -267,6 +292,7 @@ class GmailWatcher:
                         except Exception as inner_e:
                             logger.error(f"[{owner}] Erro ao processar e-mail {eid}: {inner_e}")
 
+                self.save_processed_ids()
                 mail.logout()
 
             except Exception as e:

@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import re
 import html
+import logging
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
@@ -12,6 +13,10 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Response, Query, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
+
+logger = logging.getLogger("register_red")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [app] %(message)s")
 
 try:
     from backend.models.schema import (
