@@ -29,8 +29,7 @@ def load_env_file(path: str = ENV_PATH):
                     k, v = line.split("=", 1)
                     k = k.strip()
                     v = v.strip().strip("'\"")
-                    if k not in os.environ:
-                        os.environ[k] = v
+                    os.environ[k] = v
 
 load_env_file()
 
@@ -171,6 +170,7 @@ class GmailWatcher:
 
     def check_new_emails(self) -> List[Dict[str, Any]]:
         self.accounts = self._load_accounts()
+        self.user = ", ".join([a["user"] for a in self.accounts]) if self.accounts else ""
         if not self.accounts:
             self.last_status = "Nenhuma credencial configurada no .env"
             return []
@@ -187,6 +187,8 @@ class GmailWatcher:
 
         all_results = []
         search_domains = ["nubank.com.br", "infinitepay.io"]
+        connected_owners = []
+        errors = []
 
         for acc in self.accounts:
             user = acc["user"]
@@ -194,9 +196,10 @@ class GmailWatcher:
             owner = acc["owner"]
             mail = None
             try:
-                mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=20)
+                mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=30)
                 mail.login(user, password)
                 mail.select("INBOX")
+                connected_owners.append(owner)
 
                 for s_domain in search_domains:
                     status, data = mail.search(None, 'UNSEEN', 'FROM', f'"{s_domain}"')
@@ -267,7 +270,12 @@ class GmailWatcher:
                 mail.logout()
 
             except Exception as e:
-                logger.warning(f"Falha ao conectar no Gmail IMAP ({user}): {e}")
+                err_msg = str(e)
+                logger.warning(f"Falha ao conectar no Gmail IMAP ({user}): {err_msg}")
+                if "AUTHENTICATIONFAILED" in err_msg:
+                    errors.append(f"Senha de app inválida para {user}")
+                else:
+                    errors.append(f"Erro em {user}: {err_msg[:40]}")
                 if mail:
                     try:
                         mail.logout()
@@ -275,8 +283,12 @@ class GmailWatcher:
                         pass
 
         self.last_check = datetime.now()
-        active_owners = ", ".join([a["owner"] for a in self.accounts])
-        self.last_status = f"Conectado ({active_owners} - Processados nesta rodada: {len(all_results)})"
+        status_parts = []
+        if connected_owners:
+            status_parts.append(f"Conectado ({', '.join(connected_owners)})")
+        if errors:
+            status_parts.append(f"Atenção: {', '.join(errors)}")
+        self.last_status = " | ".join(status_parts) if status_parts else "Nenhuma conta conectada"
         return all_results
 
     def _loop(self):
