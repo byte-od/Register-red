@@ -70,12 +70,18 @@ def extract_email_body(msg: email.message.Message) -> str:
             body = pl.decode(errors="ignore")
     return body
 
+import unicodedata
+
+def normalize_text(text: str) -> str:
+    clean = "".join(c for c in unicodedata.normalize("NFD", text or "") if unicodedata.category(c) != "Mn")
+    return " ".join(clean.lower().split())
+
 def is_financial_email(sender: str, subject: str) -> bool:
-    s_low = sender.lower()
-    sub_low = subject.lower()
+    s_norm = normalize_text(sender)
+    sub_norm = normalize_text(subject)
 
     # Filtrar exclusivamente instituições financeiras autorizadas (Nubank e InfinitePay)
-    is_valid_bank = any(b in s_low for b in [
+    is_valid_bank = any(b in s_norm for b in [
         "@nubank.com.br", "nubank.com.br",
         "@infinitepay.io", "infinitepay.io"
     ])
@@ -84,34 +90,59 @@ def is_financial_email(sender: str, subject: str) -> bool:
 
     # Ignora avisos administrativos, falhas de cobrança, faturas a vencer, ou códigos de segurança
     ignore_keywords = [
-        "lembrete", "aviso de fatura", "sua fatura fechou", "segurança", 
-        "código de acesso", "codigo", "atrasado", "sua compra chegou", "finalize a sua compra",
-        "falha no pagamento", "falha", "não conseguimos efetuar", "nao conseguimos efetuar",
-        "pagamento não foi processado", "pagamento nao foi processado", "recusado", "cancelado",
-        "segunda via", "novo boleto", "desconto especial", "novidade", "limite", "empréstimo", "emprestimo",
-        "funções novas", "respostas pro seu", "sacolinha", "cobranças de outubro", "confira como ficam",
-        "divulgação", "reputação"
+        "lembrete", "aviso de fatura", "sua fatura fechou", "seguranca", 
+        "codigo de acesso", "codigo de confirmacao", "codigo", "atrasado", "sua compra chegou", "finalize a sua compra",
+        "falha no pagamento", "falha", "nao conseguimos efetuar",
+        "pagamento nao foi processado", "recusado", "cancelado",
+        "segunda via", "novo boleto", "desconto especial", "novidade", "limite", "emprestimo",
+        "funcoes novas", "respostas pro seu", "sacolinha", "cobrancas de outubro", "confira como ficam",
+        "divulgacao", "reputacao", "cadastro de conta", "informe de rendimentos", "vem feriado",
+        "tap to pay", "guardando dinheiro", "cdi", "renegociar sua divida", "renegociar",
+        "seus rendimentos", "extrato da conta", "pagar das mei"
     ]
-    if any(ign in sub_low for ign in ignore_keywords):
+    if any(ign in sub_norm for ign in ignore_keywords):
         return False
 
     # Padrões obrigatórios de confirmação no assunto
     confirm_patterns = [
-        "transferência realizada", "transferencia realizada",
-        "transferência enviada", "transferencia enviada",
-        "transferência recebida", "transferencia recebida",
-        "você recebeu uma transferência", "voce recebeu uma transferencia",
-        "você recebeu um pix", "voce recebeu um pix",
-        "pix enviado", "pix realizado", "pix recebido", "pix automático", "pix automatico",
-        "compra aprovada", "compra no débito", "compra no debito", "compra no crédito", "compra no credito",
-        "pagamento realizado", "pagamento de boleto", "pagamento da conta realizado", "pagamento da conta aprovado", "pagamento aprovado", "pagamento confirmado",
-        "comprovante de transferência", "comprovante de transferencia",
-        "comprovante de pagamento", "comprovante pix", "comprovante de pix",
-        "boleto pago", "boleto liquidado", "fatura paga",
-        "venda aprovada", "venda realizada", "venda concluída", "venda concluida",
-        "você vendeu", "voce vendeu", "pagamento recebido"
+        "transferencia realizada",
+        "transferencia enviada",
+        "transferencia recebida",
+        "transferencia com sucesso",
+        "transferencia pelo pix",
+        "voce recebeu uma transferencia",
+        "voce recebeu um pix",
+        "voce transferiu",
+        "voce pagou",
+        "pix enviado",
+        "pix realizado",
+        "pix recebido",
+        "pix agendado",
+        "pix automatico",
+        "envio de pix",
+        "compra aprovada",
+        "compra no debito",
+        "compra no credito",
+        "pagamento realizado",
+        "pagamento efetuado",
+        "pagamento de boleto",
+        "pagamento da conta",
+        "pagamento aprovado",
+        "pagamento confirmado",
+        "pagamento recebido",
+        "comprovante de transferencia",
+        "comprovante de pagamento",
+        "comprovante de envio",
+        "comprovante pix",
+        "boleto pago",
+        "boleto liquidado",
+        "fatura paga",
+        "venda aprovada",
+        "venda realizada",
+        "venda concluida",
+        "voce vendeu"
     ]
-    if any(p in sub_low for p in confirm_patterns):
+    if any(p in sub_norm for p in confirm_patterns):
         return True
 
     return False
