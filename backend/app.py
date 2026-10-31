@@ -484,7 +484,15 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         "você pagou", "voce pagou",
         "pagamento realizado", "pagamento aprovado", "pagamento confirmado",
         "compra aprovada", "compra no débito", "compra no debito",
+        "compra realizada no débito", "compra realizada no debito",
         "compra no crédito", "compra no credito",
+        "débito automático", "debito automatico",
+        "débito em conta", "debito em conta",
+        "débito realizado", "debito realizado",
+        "débito efetuado", "debito efetuado",
+        "débito aprovado", "debito aprovado",
+        "pagamento no débito", "pagamento no debito",
+        "comprovante de débito", "comprovante de debito",
         "boleto pago"
     ])
 
@@ -501,7 +509,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
 
         sender = None
 
-        CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/\.-]"
+        CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/\.\-&,+]"
         DEST_BLACKLIST = [
             "se descadastrar", "descadastrar", "cancelar inscrição", "cancelar inscricao",
             "receber pelo pix", "receber dinheiro", "receber transfer",
@@ -596,7 +604,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         }
 
     # 0b. Detecção de Despesas Bancárias / Nubank (Destinatário geralmente após 'para' ou 'em')
-    CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/\.-]"
+    CHARS = r"[a-zA-Z0-9\u00C0-\u00FF\s\'()/\.\-&,+]"
     DEST_BLACKLIST = [
         "se descadastrar", "descadastrar", "cancelar inscrição", "cancelar inscricao",
         "receber pelo pix", "receber dinheiro", "receber transfer",
@@ -608,13 +616,31 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     bank_dest = None
     bank_cat = "gastos"
 
-    # Compra no cartão de crédito / débito
-    m_cartao = re.search(r"compra\s+(?:aprovada\s+)?(?:de\s+r\$\s*[\d.,]+\s+)?(?:no\s+(cr[ée]dito|d[ée]bito)\s+)?em\s+(" + CHARS + r"+?)(?:\s+aprovada|\.|$)", cmd, re.I)
+    # Compra no cartão de crédito / débito (com flexibilidade na ordem do valor e tipo de compra)
+    m_cartao = re.search(
+        r"compra\s+(?:aprovada\s+|realizada\s+)?"
+        r"(?:(?:no\s+(?:cart[ãa]o\s+de\s+)?(?:cr[ée]dito|d[ée]bito)|(?:de\s+)?r\$\s*[\d.,]+)\s+)*"
+        r"(?:no\s+(?:cart[ãa]o\s+de\s+)?(?:cr[ée]dito|d[ée]bito)\s+)?"
+        r"em\s+(" + CHARS + r"+?)(?:\s+(?:aprovada|realizada|com\s+sucesso|no\s+valor|r\$|\bvalor\b)|(?:\s*[\.\n]|$))",
+        cmd, re.I
+    )
     if m_cartao:
-        tipo = (m_cartao.group(1) or "").lower()
-        if "cr" in tipo:
+        prefix = cmd[:m_cartao.start(1)].lower()
+        if any(k in prefix for k in ['crédito', 'credito']) and not any(k in prefix for k in ['débito', 'debito']):
             bank_cat = "credito"
-        bank_dest = m_cartao.group(2).strip(" .:-")
+        else:
+            bank_cat = "gastos"
+        bank_dest = m_cartao.group(1).strip(" .:-")
+
+    # Débito Automático / Débito em Conta: "Débito automático de R$ X para/de/em [FAVORECIDO]"
+    if not bank_dest:
+        m_deb_auto = re.search(
+            r"d[ée]bito\s+(?:autom[áa]tico|em\s+conta)\s+(?:realizado\s+)?(?:(?:de\s+)?r\$\s*[\d.,]+\s+)?(?:para|de|em)\s+(" + CHARS + r"+?)(?:\s+(?:no\s+valor|valor|com\s+sucesso|foi\s+conclu[íi]d)|\.|$)",
+            cmd, re.I
+        )
+        if m_deb_auto:
+            bank_dest = m_deb_auto.group(1).strip(" .:-")
+            bank_cat = "gastos"
 
     # Boleto: "Você pagou o boleto de R$ X de/para [FAVORECIDO]"
     if not bank_dest:
@@ -630,7 +656,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
 
     # Nu Empresas / Nubank / Transferência / Pix enviado para [FAVORECIDO]
     if not bank_dest:
-        m_transf = re.search(r"(?:transfer[êe]ncia\s+(?:entre\s+contas\s+(?:do\s+nubank\s+)?para|para|enviada\s+para)|pix\s+enviado\s+para)\s+(" + CHARS + r"+?)(?=\s+(?:foi\s+realizada|no\s+valor|com\s+sucesso)|(?:\s*[\n]|$))", cmd, re.I | re.S)
+        m_transf = re.search(r"(?:transfer[êe]ncia\s+(?:entre\s+contas\s+(?:do\s+nubank\s+)?para|para|enviada\s+para|realizada\s+para)|pix\s+enviado\s+para)\s+(" + CHARS + r"+?)(?=\s+(?:foi\s+realizada|no\s+valor|com\s+sucesso)|(?:\s*[\n]|$))", cmd, re.I | re.S)
         if m_transf:
             bank_dest = m_transf.group(1).strip(" :-")
 
@@ -642,17 +668,29 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
 
     # Você pagou R$ X em [ESTABELECIMENTO]
     if not bank_dest:
-        m_pagou = re.search(r"voc[êe]\s+pagou\s+(?:r\$\s*[\d.,]+\s+)?em\s+(" + CHARS + r"+?)(?:\s+com\s+sucesso|\.|$)", cmd, re.I)
+        m_pagou = re.search(r"voc[êe]\s+pagou\s+(?:r\$\s*[\d.,]+\s+)?(?:no\s+(cr[ée]dito|d[ée]bito)\s+)?em\s+(" + CHARS + r"+?)(?:\s+com\s+sucesso|\.|$)", cmd, re.I)
         if m_pagou:
-            bank_dest = m_pagou.group(1).strip(" .:-")
+            tipo = (m_pagou.group(1) or "").lower()
+            if "cr" in tipo and "d" not in tipo:
+                bank_cat = "credito"
+            else:
+                bank_cat = "gastos"
+            bank_dest = m_pagou.group(2).strip(" .:-")
 
-    # Genérico bancário: qualquer frase bancária contendo envio "para [FAVORECIDO]"
-    if not bank_dest and amt_bank is not None and any(k in cmd_lower for k in ["transferência enviada", "transferencia enviada", "transferência realizada", "transferencia realizada", "transferiu", "enviou", "pix enviado", "pix realizado", "valor enviado", "valor pago", "pagamento realizado", "pagou"]):
-        m_gen = re.search(r"\bpara\s+(" + CHARS + r"+?)(?=(?:\s+(?:no\s+valor|valor\s+de|valor\s+enviado|foi\s+realizada|foi\s+conclu[íi]d[ao]|com\s+sucesso))|(?:\s*[\.\n]|$))", cmd, re.I)
+    # Genérico bancário: qualquer frase bancária contendo envio "para [FAVORECIDO]" ou "em [ESTABELECIMENTO]"
+    if not bank_dest and amt_bank is not None and any(k in cmd_lower for k in [
+        "transferência enviada", "transferencia enviada", "transferência realizada", "transferencia realizada",
+        "transferiu", "enviou", "pix enviado", "pix realizado", "valor enviado", "valor pago",
+        "pagamento realizado", "pagou", "débito", "debito"
+    ]):
+        m_gen = re.search(r"\b(?:para|em)\s+(" + CHARS + r"+?)(?=(?:\s+(?:no\s+valor|valor\s+de|valor\s+enviado|foi\s+realizada|foi\s+conclu[íi]d[ao]|com\s+sucesso))|(?:\s*[\.\n]|$))", cmd, re.I)
         if m_gen:
             cand = m_gen.group(1).strip(" .:-")
             if not any(b in cand.lower() for b in DEST_BLACKLIST):
                 bank_dest = cand
+
+    if any(k in cmd_lower for k in ["debito", "débito", "cartão de débito", "cartao de debito"]):
+        bank_cat = "gastos"
 
     if bank_dest:
         if any(b in bank_dest.lower() for b in DEST_BLACKLIST) or len(bank_dest.strip()) < 3:
@@ -686,7 +724,8 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     is_bank_notification = any(k in cmd_lower for k in [
         "nubank", "banco inter", "itau", "bradesco", "santander", "instituição de pagamento",
         "transferência recebida", "transferencia recebida", "transferência enviada", "transferencia enviada",
-        "comprovante pix", "comprovante de transferência"
+        "comprovante pix", "comprovante de transferência", "comprovante de débito", "comprovante de debito",
+        "débito automático", "debito automatico"
     ])
     if is_bank_notification and not any(k in cmd_lower for k in ["adicionar", "criar", "lance", "novo gasto", "resumo", "saldo", "pagar", "quitei", "deletar", "excluir"]):
         return {"action": "none", "message": "Notificação bancária sem ação financeira reconhecida."}
@@ -708,7 +747,14 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         return {'action': 'read'}
         
     # 2. Toggle Paid / Pay
-    if any(k in cmd_lower for k in ['pagar', 'paguei', 'pago', 'quitei', 'quitar', 'dar baixa', 'baixar']):
+    # Comandos com valor financeiro ou especificando débito/crédito são criação de despesas, não baixa de contas
+    is_debit = any(k in cmd_lower for k in ['debito', 'débito'])
+    has_amount = (amt_bank is not None and amt_bank > 0) or bool(re.search(r'(?:r\$|\$)?\s*\d+', cmd_lower))
+    has_action_verbs = any(k in cmd_lower for k in ['pagar', 'paguei', 'pago', 'quitei', 'quitar', 'dar baixa', 'baixar'])
+
+    is_bill_toggle = has_action_verbs and not is_debit and not any(k in cmd_lower for k in [' no credito', ' no crédito', ' no pix', ' no debito', ' no débito', ' no cartao', ' no cartão', 'passei']) and (not has_amount or any(k in cmd_lower for k in ['a conta', 'conta de', 'o boleto', 'fatura']))
+
+    if is_bill_toggle:
         cleaned = re.sub(r'\b(pagar|paguei|pago|quitei|quitar|dar baixa|baixar|conta de|a conta|o|a)\b', '', cmd_lower).strip()
         return {'action': 'pay', 'name': cleaned, 'paid': True}
         
@@ -733,29 +779,35 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             except Exception:
                 amount = 0.0
 
-    # Extract category
+    # Extract category (Débito sempre pertence a gastos correntes, nunca fatura de crédito)
     category = 'gastos'
-    if any(k in cmd_lower for k in [' em casa', ' na casa', 'categoria casa', ' de casa']):
+    if is_debit or any(k in cmd_lower for k in ['debito', 'débito', 'no débito', 'no debito', 'cartão de débito', 'cartao de debito']):
+        category = 'gastos'
+    elif any(k in cmd_lower for k in [' em casa', ' na casa', 'categoria casa', ' de casa']):
         category = 'casa'
     elif any(k in cmd_lower for k in [' em pessoal', ' no pessoal', 'categoria pessoal', ' pessoal']):
         category = 'pessoal'
-    elif any(k in cmd_lower for k in [' em credito', ' no credito', 'cartao', 'cartão', 'crédito', 'credito']):
+    elif any(k in cmd_lower for k in [' em credito', ' no credito', 'cartao de credito', 'cartão de crédito', 'crédito', 'credito', 'cartao', 'cartão']):
         category = 'credito'
     elif any(k in cmd_lower for k in [' em gastos', ' nos gastos', 'categoria gastos', ' gastos']):
         category = 'gastos'
 
     # Extract name
     name = cmd
-    name = re.sub(r'(?i)\b(adicionar|adicione|novo gasto|gasto|lancar|lançar|lance|criar|crie)\b', '', name)
-    name = re.sub(r'(?i)(?:em|na|no|categoria)\s+(casa|pessoal|credito|crédito|gastos|cartão|cartao)', '', name)
+    name = re.sub(r'(?i)\b(adicionar|adicione|novo gasto|gasto|lancar|lançar|lance|criar|crie|comprei|compra|passei|paguei)\b', '', name)
+    name = re.sub(r'(?i)\b(no cartão de débito|no cartao de debito|cartão de débito|cartao de debito|no débito|no debito|débito|debito)\b', '', name)
+    name = re.sub(r'(?i)\b(no cartão de crédito|no cartao de credito|cartão de crédito|cartao de credito|no crédito|no credito|crédito|credito)\b', '', name)
+    name = re.sub(r'(?i)\b(no cartão|no cartao|cartão|cartao)\b', '', name)
+    name = re.sub(r'(?i)(?:em|na|no|categoria)\s+(casa|pessoal|credito|crédito|gastos)', '', name)
     if amt_match:
         name = name.replace(amt_match.group(0), '')
         name = re.sub(r'(?i)\b(reais|real|r\$|\$)\b', '', name)
-    name = re.sub(r'(?i)\b(em|na|no)\b', '', name)
-    name = re.sub(r'^(?:de\s+|da\s+|do\s+)', '', name.strip(), flags=re.I)
+    name = re.sub(r'(?i)\b(em|na|no|de|da|do)\b', ' ', name)
     name = re.sub(r'\s+', ' ', name).strip(' :,.-')
     if not name:
-        name = 'Gasto Avulso'
+        name = 'Débito Avulso' if is_debit else 'Gasto Avulso'
+    else:
+        name = name.title()
 
     return {'action': 'create', 'name': name, 'amount': amount, 'category': category}
 
