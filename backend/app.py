@@ -22,7 +22,7 @@ try:
     from backend.models.schema import (
         MonthData, MonthListItem, CreateMonthRequest, SyncResult, ExpenseItem, ExpenseCategory, IncomeItem
     )
-    from backend.services.numbers_service import numbers_manager, parse_day_num, GOOGLE_DRIVE_DIR
+    from backend.services.numbers_service import numbers_manager, parse_day_num, GOOGLE_DRIVE_DIR, MONTHS_MAP
     from backend.services.excel_service import generate_excel_workbook
     from backend.services.gmail_watcher import gmail_watcher
     from backend.services.action_history import action_history
@@ -32,7 +32,7 @@ except ImportError:
     from models.schema import (
         MonthData, MonthListItem, CreateMonthRequest, SyncResult, ExpenseItem, ExpenseCategory, IncomeItem
     )
-    from services.numbers_service import numbers_manager, parse_day_num, GOOGLE_DRIVE_DIR
+    from services.numbers_service import numbers_manager, parse_day_num, GOOGLE_DRIVE_DIR, MONTHS_MAP
     from services.excel_service import generate_excel_workbook
     from services.gmail_watcher import gmail_watcher
     from services.action_history import action_history
@@ -292,18 +292,29 @@ def export_numbers(month_id: str):
         media_type="application/vnd.apple.numbers"
     )
 
+def resolve_target_month_id(requested_month_id: Optional[str] = None, date_str: Optional[str] = None) -> str:
+    """
+    Resolve dinamicamente o ID do mês alvo com base na data solicitada, data do evento ou data atual do sistema.
+    """
+    now = datetime.now()
+    cur_id = f"{now.year:04d}-{now.month:02d}"
+
+    if requested_month_id and requested_month_id.strip():
+        req = requested_month_id.strip()
+        if re.match(r"^\d{4}-\d{2}$", req):
+            return req
+
+    if date_str:
+        m_ym = re.search(r"(\d{4})-(\d{2})", str(date_str))
+        if m_ym:
+            return f"{m_ym.group(1)}-{m_ym.group(2)}"
+
+    return cur_id
+
 @app.get("/api/reports/unforeseen")
 def get_unforeseen_report(month_id: Optional[str] = Query(None)):
-    if not month_id:
-        months_list = numbers_manager.list_months()
-        if any(m.id == "2026-10" for m in months_list):
-            month_id = "2026-10"
-        elif months_list:
-            month_id = months_list[0].id
-        else:
-            month_id = "2026-10"
-
-    month = numbers_manager.get_month(month_id)
+    target_id = resolve_target_month_id(month_id)
+    month = numbers_manager.get_or_create_month(target_id)
     if not month:
         raise HTTPException(status_code=404, detail="Mês não encontrado")
 
@@ -312,16 +323,8 @@ def get_unforeseen_report(month_id: Optional[str] = Query(None)):
 
 @app.get("/api/reports/unforeseen/export/excel")
 def export_unforeseen_excel(month_id: Optional[str] = Query(None)):
-    if not month_id:
-        months_list = numbers_manager.list_months()
-        if any(m.id == "2026-10" for m in months_list):
-            month_id = "2026-10"
-        elif months_list:
-            month_id = months_list[0].id
-        else:
-            month_id = "2026-10"
-
-    month = numbers_manager.get_month(month_id)
+    target_id = resolve_target_month_id(month_id)
+    month = numbers_manager.get_or_create_month(target_id)
     if not month:
         raise HTTPException(status_code=404, detail="Mês não encontrado")
 
@@ -448,6 +451,36 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     cmd = clean_email_html(cmd)
     cmd_lower = cmd.lower().strip()
     
+    # 0. Extração de Data do comando ou e-mail
+    extracted_date = None
+    m_ymd = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", cmd)
+    if m_ymd:
+        extracted_date = f"{m_ymd.group(1)}-{m_ymd.group(2)}-{m_ymd.group(3)}"
+    else:
+        m_slash = re.search(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b", cmd)
+        if m_slash:
+            d_d = int(m_slash.group(1))
+            m_m = int(m_slash.group(2))
+            y_y = int(m_slash.group(3)) if m_slash.group(3) else datetime.now().year
+            extracted_date = f"{y_y:04d}-{m_m:02d}-{d_d:02d}"
+        else:
+            m_dia = re.search(r"\b(?:no\s+dia|dia)\s*(\d{1,2})\b", cmd, re.I)
+            if m_dia:
+                d_d = int(m_dia.group(1))
+                now = datetime.now()
+                extracted_date = f"{now.year:04d}-{now.month:02d}-{d_d:02d}"
+            else:
+                m_nu_dt = re.search(r"\b(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\b", cmd, re.I)
+                if m_nu_dt:
+                    d_d = int(m_nu_dt.group(1))
+                    m_str = m_nu_dt.group(2).lower()
+                    m_num = MONTHS_MAP.get(m_str, datetime.now().month)
+                    now = datetime.now()
+                    extracted_date = f"{now.year:04d}-{m_num:02d}-{d_d:02d}"
+
+    if not extracted_date:
+        extracted_date = datetime.now().strftime("%Y-%m-%d")
+
     # 0. Extração de Valor Monetário (sempre buscando após R$ e contando todas as casas decimais)
     amt_bank = None
     m_val = re.search(r"r\$\s*(\d{1,3}(?:\.\d{3})*|\d+)(?:[,.](\d{1,2}))?", cmd, re.I)
@@ -584,23 +617,11 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             else:
                 final_name = "Transferência Recebida"
 
-        # Extração de data do recebimento se contido no texto
-        extracted_day = None
-        m_dt_slash = re.search(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b", cmd)
-        if m_dt_slash:
-            d_num = int(m_dt_slash.group(1))
-            extracted_day = f"Dia {d_num:02d}"
-        else:
-            m_dt_word = re.search(r"\b(?:no\s+dia|dia)\s*(\d{1,2})\b", cmd, re.I)
-            if m_dt_word:
-                d_num = int(m_dt_word.group(1))
-                extracted_day = f"Dia {d_num:02d}"
-
         return {
             "action": "income",
             "name": final_name,
             "amount": val_inc or 0.0,
-            "due_day": extracted_day or datetime.now().strftime("%Y-%m-%d")
+            "due_day": extracted_date
         }
 
     # 0b. Detecção de Despesas Bancárias / Nubank (Destinatário geralmente após 'para' ou 'em')
@@ -717,6 +738,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
             "amount": amt_bank,
             "category": bank_cat,
             "paid": True,
+            "due_day": extracted_date,
             "notes": "Nubank Auto"
         }
 
@@ -736,7 +758,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
         amt_str = m_inc_voice.group(1).replace(".", "").replace(",", ".")
         amt = float(amt_str)
         origem = (m_inc_voice.group(2) or "Receita Extra").strip(" .")
-        return {"action": "income", "name": origem, "amount": amt}
+        return {"action": "income", "name": origem, "amount": amt, "due_day": extracted_date}
 
     # 1. Unforeseen Report / Gastos Imprevistos
     if any(k in cmd_lower for k in ['imprevisto', 'imprevistos', 'gastos imprevistos', 'não previstos', 'nao previstos']):
@@ -802,6 +824,8 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     if amt_match:
         name = name.replace(amt_match.group(0), '')
         name = re.sub(r'(?i)\b(reais|real|r\$|\$)\b', '', name)
+    name = re.sub(r'(?i)\b(?:no\s+dia|dia)\s*\d{1,2}\b', '', name)
+    name = re.sub(r'\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b', '', name)
     name = re.sub(r'(?i)\b(em|na|no|de|da|do)\b', ' ', name)
     name = re.sub(r'\s+', ' ', name).strip(' :,.-')
     if not name:
@@ -809,23 +833,15 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     else:
         name = name.title()
 
-    return {'action': 'create', 'name': name, 'amount': amount, 'category': category}
+    return {
+        'action': 'create',
+        'name': name,
+        'amount': amount,
+        'category': category,
+        'due_day': extracted_date
+    }
 
 def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
-    month_id = payload.month_id
-    if not month_id:
-        months_list = numbers_manager.list_months()
-        if any(m.id == "2026-10" for m in months_list):
-            month_id = "2026-10"
-        elif months_list:
-            month_id = months_list[0].id
-        else:
-            month_id = "2026-10"
-            
-    month = numbers_manager.get_month(month_id)
-    if not month:
-        raise HTTPException(status_code=404, detail=f"Mês {month_id} não encontrado")
-
     action = payload.action
     name = payload.name
     amount = payload.amount
@@ -833,7 +849,9 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
     paid = payload.paid
     due_day = payload.due_day
     notes = payload.notes
+    month_id = payload.month_id
 
+    parsed = {}
     if payload.command:
         parsed = parse_gemini_command(payload.command)
         if not action:
@@ -846,6 +864,13 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
             category = parsed.get("category")
         if paid is None and "paid" in parsed:
             paid = parsed.get("paid")
+        if not due_day and "due_day" in parsed:
+            due_day = parsed.get("due_day")
+
+    target_month_id = resolve_target_month_id(month_id, due_day)
+    month = numbers_manager.get_or_create_month(target_month_id)
+    if not month:
+        raise HTTPException(status_code=404, detail=f"Mês {target_month_id} não encontrado")
 
     action = (action or "create").lower()
 
@@ -1320,7 +1345,8 @@ def trigger_gmail_watcher_check():
 @app.get("/api/recent-actions")
 def get_recent_actions(limit: int = 10, month_id: Optional[str] = None):
     try:
-        month_data = numbers_manager.get_month(month_id or "2026-10")
+        target_id = resolve_target_month_id(month_id)
+        month_data = numbers_manager.get_month(target_id)
     except Exception:
         month_data = None
     return {
@@ -1411,7 +1437,7 @@ def gemini_tools():
                         "name": {"type": "string", "description": "Nome ou descrição da conta/gasto"},
                         "amount": {"type": "number", "description": "Valor em reais"},
                         "category": {"type": "string", "enum": ["gastos", "casa", "pessoal", "credito"], "description": "Categoria da despesa"},
-                        "due_day": {"type": "string", "description": "Dia do vencimento ou data (ex: 2026-10-10)"},
+                        "due_day": {"type": "string", "description": "Dia do vencimento ou data (ex: 2026-11-10)"},
                         "paid": {"type": "boolean", "description": "Se a conta já está paga"}
                     },
                     "required": ["name", "amount"]

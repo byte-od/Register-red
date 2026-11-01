@@ -277,6 +277,7 @@ class GmailWatcher:
 
                             # Se o e-mail tiver data superior a 48 horas, ignora para não importar histórico antigo
                             date_str = h_msg.get("Date")
+                            email_dt = None
                             if date_str:
                                 try:
                                     from email.utils import parsedate_to_datetime
@@ -286,8 +287,15 @@ class GmailWatcher:
                                         mail.store(eid, "+FLAGS", "\\Seen")
                                         self.processed_ids.add(id_key)
                                         continue
+                                    email_dt = msg_dt
                                 except Exception as d_err:
                                     logger.debug(f"Erro ao verificar data do e-mail: {d_err}")
+
+                            if not email_dt:
+                                email_dt = datetime.now()
+
+                            email_month_id = email_dt.strftime("%Y-%m")
+                            email_due_day = email_dt.strftime("%Y-%m-%d")
 
                             if not is_financial_email(sender, subject):
                                 # Marca como lido avisos de marketing e registra ID
@@ -295,7 +303,7 @@ class GmailWatcher:
                                 self.processed_ids.add(id_key)
                                 continue
 
-                            logger.info(f"[{owner}] Processando e-mail financeiro: [{subject}] de [{sender}]")
+                            logger.info(f"[{owner}] Processando e-mail financeiro: [{subject}] de [{sender}] ({email_due_day})")
 
                             res, bdata = mail.fetch(eid, "(RFC822)")
                             if res != "OK" or not bdata or not bdata[0] or not isinstance(bdata[0], tuple):
@@ -310,7 +318,12 @@ class GmailWatcher:
                             full_cmd = f"{subject}. {cleaned}" if subject else cleaned
 
                             acc_note = f"Auto ({owner})" if owner != "Julio" else "Nubank Auto"
-                            payload = GeminiActionPayload(command=full_cmd, notes=acc_note)
+                            payload = GeminiActionPayload(
+                                command=full_cmd,
+                                notes=acc_note,
+                                month_id=email_month_id,
+                                due_day=email_due_day
+                            )
                             action_res = execute_gemini_action(payload)
 
                             mail.store(eid, "+FLAGS", "\\Seen")

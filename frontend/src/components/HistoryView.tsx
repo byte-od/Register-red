@@ -147,7 +147,9 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
               {months.map((m) => {
                 const isPositive = m.balance >= 0;
-                const isCurrent = m.id === '2026-10';
+                const now = new Date();
+                const currentCalId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                const isCurrent = m.id === currentCalId;
 
                 return (
                   <tr

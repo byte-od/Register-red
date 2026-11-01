@@ -517,6 +517,39 @@ class NumbersManager:
             ensure_gastos_category(m)
         return m
 
+    def get_or_create_month(self, month_id: Optional[str] = None) -> MonthData:
+        self.scan_google_drive()
+        now = datetime.now()
+        target_id = (month_id or f"{now.year:04d}-{now.month:02d}").strip()
+        
+        m = self.months.get(target_id)
+        if m:
+            ensure_gastos_category(m)
+            return m
+
+        # Se o mês não existe na memória nem no Google Drive, cria automaticamente clonando o mais recente
+        try:
+            parts = target_id.split("-")
+            year = int(parts[0])
+            month_num = int(parts[1])
+            req = CreateMonthRequest(
+                year=year,
+                month_number=month_num,
+                clone_from_id=None,
+                carry_over_balance=False,
+                reset_paid=True,
+                sync_to_drive=True
+            )
+            created = self.create_month(req)
+            return created
+        except Exception as e:
+            print(f"[NumbersManager] Erro ao auto-criar mês {target_id}: {e}")
+            if self.months:
+                latest = sorted(self.months.values(), key=lambda x: (x.year, x.month_number), reverse=True)[0]
+                ensure_gastos_category(latest)
+                return latest
+            raise
+
     def update_month(self, month_id: str, updated: MonthData) -> MonthData:
         ensure_gastos_category(updated)
         updated = calculate_summary_and_timeline(updated)

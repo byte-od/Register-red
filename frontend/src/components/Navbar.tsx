@@ -41,6 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
+  const currentCalMonthId = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 
   // Close export dropdown on outside click
   useEffect(() => {
@@ -146,7 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 {months.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.title} {m.id === '2026-10' ? '★' : ''}
+                    {m.title} {m.id === currentCalMonthId ? '★' : ''}
                   </option>
                 ))}
               </select>

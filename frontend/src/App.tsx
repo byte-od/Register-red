@@ -35,8 +35,13 @@ import { usePWAInstall } from './hooks/usePWAInstall';
 import { usePushNotifications } from './hooks/usePushNotifications';
 
 export const App: React.FC = () => {
+  const getInitialMonthId = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  };
+
   const [months, setMonths] = useState<MonthListItem[]>([]);
-  const [currentMonthId, setCurrentMonthId] = useState<string>('2026-10');
+  const [currentMonthId, setCurrentMonthId] = useState<string>(getInitialMonthId);
   const [currentMonth, setCurrentMonth] = useState<MonthData | null>(null);
   const [overview, setOverview] = useState<OverviewStats | null>(null);
   const [activeTab, setActiveTab] = useState<'month' | 'unforeseen' | 'history'>('month');
@@ -107,9 +112,12 @@ export const App: React.FC = () => {
       const monthList = await fetchMonths();
       setMonths(monthList);
       
-      const targetId = monthList.some((m) => m.id === '2026-10')
-        ? '2026-10'
-        : monthList[0]?.id || '2026-10';
+      const now = new Date();
+      const currentCalId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      const targetId = monthList.some((m) => m.id === currentCalId)
+        ? currentCalId
+        : monthList[0]?.id || currentCalId;
       
       setCurrentMonthId(targetId);
       const data = await fetchMonth(targetId);
