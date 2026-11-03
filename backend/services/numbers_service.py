@@ -181,13 +181,19 @@ def calculate_summary_and_timeline(month: MonthData) -> MonthData:
         cat_paid = 0.0
         for it in cat.items:
             cat_tot += it.amount
-            total_items += 1
             if it.paid:
                 cat_paid += it.amount
-                paid_items += 1
         cat.total = round(cat_tot, 2)
         cat.paid_total = round(cat_paid, 2)
         cat.pending_total = round(cat_tot - cat_paid, 2)
+
+        # A Lista de Desejos tem seu próprio total para acompanhamento, mas NÃO deve inflar
+        # as despesas reais do orçamento nem reduzir o saldo antes de ser consolidada
+        if cat.id.lower() == "desejos":
+            continue
+
+        total_items += len(cat.items)
+        paid_items += sum(1 for it in cat.items if it.paid)
         tot_expenses += cat.total
         tot_paid += cat.paid_total
         tot_pending += cat.pending_total
@@ -234,6 +240,8 @@ def calculate_summary_and_timeline(month: MonthData) -> MonthData:
         daily_income_sums[inc_day] += inc.amount
 
     for cat in month.categories:
+        if cat.id.lower() == "desejos":
+            continue
         for it in cat.items:
             exp_day = parse_day_num(it.due_day, days_in_month=days_in_month, default_day=10)
             daily_expense_sums[exp_day] += it.amount
@@ -287,26 +295,45 @@ def safe_cell_value(table, row: int, col: int, default=None):
             return val if val is not None else default
         except:
             return default
-def ensure_gastos_category(month: MonthData) -> MonthData:
+def ensure_standard_categories(month: MonthData) -> MonthData:
     has_gastos = False
+    has_desejos = False
     for c in month.categories:
-        if c.id.lower() == "gastos" or c.name.lower() == "gastos":
+        c_id = c.id.lower()
+        if c_id in ["gastos", "expenses-gastos"]:
             has_gastos = True
             c.id = "gastos"
             c.name = "Gastos"
-            # Na categoria Gastos, nada é recorrente e tudo já entra pago
             for it in c.items:
                 it.is_recurring = False
                 it.paid = True
-            break
+        elif c_id in ["desejos", "lista_de_desejos", "lista de desejos", "wishlist", "expenses-desejos"]:
+            has_desejos = True
+            c.id = "desejos"
+            c.name = "Lista de Desejos"
+            for it in c.items:
+                it.is_recurring = False
+                it.paid = False
+
     if not has_gastos:
         month.categories.append(ExpenseCategory(
             id="gastos",
             name="Gastos",
             items=[]
         ))
+
+    if not has_desejos:
+        month.categories.append(ExpenseCategory(
+            id="desejos",
+            name="Lista de Desejos",
+            items=[]
+        ))
+
     calculate_summary_and_timeline(month)
     return month
+
+def ensure_gastos_category(month: MonthData) -> MonthData:
+    return ensure_standard_categories(month)
 
 def parse_single_numbers_file(filepath: str) -> Optional[MonthData]:
     filename = os.path.basename(filepath)
@@ -343,12 +370,13 @@ def parse_single_numbers_file(filepath: str) -> Optional[MonthData]:
 
     # Extract Categories
     categories: List[ExpenseCategory] = []
-    cat_order = ["Casa", "Pessoal", "Credito", "Gastos"]
+    cat_order = ["Casa", "Pessoal", "Credito", "Gastos", "Lista de Desejos"]
     table_to_cat = {
         "Expenses": "Casa",
         "Expenses-1-1-2-1": "Pessoal",
         "Expenses-1-1-2": "Credito",
-        "Expenses-Gastos": "Gastos"
+        "Expenses-Gastos": "Gastos",
+        "Expenses-Desejos": "Lista de Desejos"
     }
 
     found_cats: Dict[str, List[ExpenseItem]] = {c: [] for c in cat_order}
@@ -375,9 +403,11 @@ def parse_single_numbers_file(filepath: str) -> Optional[MonthData]:
             if not due or due.lower() in ["none", "pago", "true", "false"]:
                 due = f"{year:04d}-{month_num:02d}-10"
             clean_cat = cat_name.lower().replace(" ", "_")
-            is_rec = False if clean_cat == "gastos" else True
+            is_rec = False if clean_cat in ["gastos", "desejos", "lista_de_desejos"] else True
             if clean_cat == "gastos":
                 paid = True
+            elif clean_cat in ["desejos", "lista_de_desejos"]:
+                paid = False
 
             # Extração de parcelas caso estejam presentes no nome (ex: "Curso (2/10)" ou "2/12")
             inst_curr = None
@@ -405,9 +435,10 @@ def parse_single_numbers_file(filepath: str) -> Optional[MonthData]:
             ))
 
     for cat_name, items in found_cats.items():
-        if items or cat_name in ["Casa", "Pessoal", "Credito", "Gastos"]:
+        if items or cat_name in ["Casa", "Pessoal", "Credito", "Gastos", "Lista de Desejos"]:
+            cid = "desejos" if cat_name.lower() in ["desejos", "lista de desejos", "lista_de_desejos"] else cat_name.lower().replace(" ", "_")
             categories.append(ExpenseCategory(
-                id=cat_name.lower().replace(" ", "_"),
+                id=cid,
                 name=cat_name,
                 items=items
             ))
@@ -608,6 +639,19 @@ class NumbersManager:
             for cat in base_month.categories:
                 cloned_items: List[ExpenseItem] = []
                 for exp in cat.items:
+                    if cat.id.lower() == "desejos":
+                        # Desejos continuam pendentes no mês seguinte até serem consolidados ou excluídos
+                        cloned_items.append(ExpenseItem(
+                            id=f"exp_desejos_{uuid.uuid4().hex[:6]}",
+                            name=exp.name,
+                            amount=exp.amount,
+                            paid=False,
+                            due_day=exp.due_day,
+                            notes=exp.notes,
+                            is_recurring=False
+                        ))
+                        continue
+
                     # As despesas não marcadas como recorrentes NÃO devem ser replicadas
                     if not getattr(exp, "is_recurring", True):
                         continue
@@ -676,7 +720,9 @@ class NumbersManager:
             categories = [
                 ExpenseCategory(id="casa", name="Casa", items=[]),
                 ExpenseCategory(id="pessoal", name="Pessoal", items=[]),
-                ExpenseCategory(id="credito", name="Credito", items=[])
+                ExpenseCategory(id="credito", name="Credito", items=[]),
+                ExpenseCategory(id="gastos", name="Gastos", items=[]),
+                ExpenseCategory(id="desejos", name="Lista de Desejos", items=[])
             ]
 
         new_month = MonthData(
@@ -691,6 +737,7 @@ class NumbersManager:
             categories=categories
         )
 
+        ensure_standard_categories(new_month)
         new_month = calculate_summary_and_timeline(new_month)
         self.months[month_id] = new_month
         self.save_cache()
@@ -733,7 +780,8 @@ class NumbersManager:
             "casa": "Expenses",
             "pessoal": "Expenses-1-1-2-1",
             "credito": "Expenses-1-1-2",
-            "gastos": "Expenses-Gastos"
+            "gastos": "Expenses-Gastos",
+            "desejos": "Expenses-Desejos"
         }
 
         for cat in month.categories:

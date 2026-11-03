@@ -232,6 +232,106 @@ def move_item(
     }
 
 
+class ConsolidateWishRequest(BaseModel):
+    item_id: str
+    target_category_id: str
+    installments_total: int = 1
+    installments_current: int = 1
+    installment_amount: Optional[float] = None
+    paid: bool = False
+    due_day: Optional[str] = None
+    notes: Optional[str] = None
+
+@app.post("/api/months/{month_id}/consolidate-wish")
+def consolidate_wish(month_id: str, req: ConsolidateWishRequest):
+    month = numbers_manager.get_month(month_id)
+    if not month:
+        raise HTTPException(status_code=404, detail="Mês não encontrado")
+
+    target_cat = next((c for c in month.categories if c.id.lower() == req.target_category_id.lower()), None)
+    if not target_cat:
+        raise HTTPException(status_code=404, detail=f"Categoria de destino '{req.target_category_id}' não encontrada")
+
+    found_item = None
+    source_cat = None
+    for cat in month.categories:
+        for it in cat.items:
+            if it.id == req.item_id:
+                found_item = it
+                source_cat = cat
+                break
+        if found_item:
+            break
+
+    if not found_item or not source_cat:
+        raise HTTPException(status_code=404, detail="Item da lista de desejos não encontrado")
+
+    # Remove da lista de desejos (ou categoria de origem)
+    source_cat.items.remove(found_item)
+
+    is_parcelado = req.installments_total > 1
+    final_amount = req.installment_amount
+    if final_amount is None or final_amount <= 0:
+        if is_parcelado:
+            final_amount = round(found_item.amount / req.installments_total, 2)
+        else:
+            final_amount = found_item.amount
+
+    # Nome da despesa
+    final_name = found_item.name
+    if is_parcelado and target_cat.id.lower() != "gastos":
+        if not re.search(r"\(?(\d+)\s*[/xX]\s*(\d+)\)?", final_name):
+            final_name = f"{final_name} ({req.installments_current}/{req.installments_total})"
+
+    # Em gastos, não há parcelamento nem recorrência
+    if target_cat.id.lower() == "gastos":
+        is_rec = False
+        inst_curr = None
+        inst_tot = None
+        is_paid = True if req.paid is not None else True
+    else:
+        is_rec = is_parcelado or found_item.is_recurring or False
+        inst_curr = req.installments_current if is_parcelado else None
+        inst_tot = req.installments_total if is_parcelado else None
+        is_paid = req.paid
+
+    due = req.due_day or found_item.due_day or datetime.now().strftime("%Y-%m-%d")
+
+    consolidated_item = ExpenseItem(
+        id=f"exp_{target_cat.id}_{uuid.uuid4().hex[:6]}",
+        name=final_name,
+        amount=final_amount,
+        paid=is_paid,
+        due_day=due,
+        notes=req.notes if req.notes is not None else found_item.notes,
+        is_recurring=is_rec,
+        installments_current=inst_curr,
+        installments_total=inst_tot
+    )
+
+    target_cat.items.append(consolidated_item)
+
+    updated = numbers_manager.update_month(month_id, month)
+
+    inst_desc = f" ({req.installments_total}x de R$ {final_amount:,.2f})" if is_parcelado else " (À vista)"
+    action_history.record(
+        action_type="consolidate_wish",
+        title=f"Desejo consolidado: {found_item.name}",
+        amount=final_amount,
+        category=target_cat.name,
+        source="manual",
+        status=f"Movido para {target_cat.name}{inst_desc}"
+    )
+
+    return {
+        "success": True,
+        "item": consolidated_item,
+        "source_category": source_cat.id,
+        "target_category": target_cat.id,
+        "month": updated
+    }
+
+
 @app.post("/api/months/{month_id}/sync-drive", response_model=SyncResult)
 def sync_to_drive(month_id: str):
     month = numbers_manager.get_month(month_id)
@@ -404,7 +504,7 @@ def get_qrcode():
 class GeminiActionPayload(BaseModel):
     command: Optional[str] = None
     action: Optional[str] = None  # "create", "read", "pay", "delete"
-    category: Optional[str] = None  # "casa", "pessoal", "credito", "gastos"
+    category: Optional[str] = None  # "casa", "pessoal", "credito", "gastos", "desejos"
     name: Optional[str] = None
     amount: Optional[float] = None
     due_day: Optional[str] = None
@@ -793,7 +893,15 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     amount = amt_bank if amt_bank is not None else 0.0
     amt_match = None
     if not amount:
-        amt_match = re.search(r'(?:r\$|\$)?\s*(\d+(?:[.,]\d{1,2})?)', cmd_lower)
+        # 1. Procura valor explícito com R$ ou reais
+        amt_match = re.search(r'(?:r\$|\$)\s*(\d+(?:[.,]\d{1,2})?)', cmd_lower)
+        if not amt_match:
+            amt_match = re.search(r'(\d+(?:[.,]\d{1,2})?)\s*(?:reais|real)\b', cmd_lower)
+        if not amt_match:
+            all_nums = list(re.finditer(r'\b(\d+(?:[.,]\d{1,2})?)\b', cmd_lower))
+            if all_nums:
+                amt_match = all_nums[-1]
+
         if amt_match:
             val_str = amt_match.group(1).replace(',', '.')
             try:
@@ -805,6 +913,8 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     category = 'gastos'
     if is_debit or any(k in cmd_lower for k in ['debito', 'débito', 'no débito', 'no debito', 'cartão de débito', 'cartao de debito']):
         category = 'gastos'
+    elif any(k in cmd_lower for k in ['desejo', 'desejos', 'lista de desejos', 'wishlist']):
+        category = 'desejos'
     elif any(k in cmd_lower for k in [' em casa', ' na casa', 'categoria casa', ' de casa']):
         category = 'casa'
     elif any(k in cmd_lower for k in [' em pessoal', ' no pessoal', 'categoria pessoal', ' pessoal']):
@@ -820,7 +930,7 @@ def parse_gemini_command(cmd: str) -> Dict[str, Any]:
     name = re.sub(r'(?i)\b(no cartão de débito|no cartao de debito|cartão de débito|cartao de debito|no débito|no debito|débito|debito)\b', '', name)
     name = re.sub(r'(?i)\b(no cartão de crédito|no cartao de credito|cartão de crédito|cartao de credito|no crédito|no credito|crédito|credito)\b', '', name)
     name = re.sub(r'(?i)\b(no cartão|no cartao|cartão|cartao)\b', '', name)
-    name = re.sub(r'(?i)(?:em|na|no|categoria)\s+(casa|pessoal|credito|crédito|gastos)', '', name)
+    name = re.sub(r'(?i)(?:em|na|no|categoria)\s+(casa|pessoal|credito|crédito|gastos|desejos|lista de desejos)', '', name)
     if amt_match:
         name = name.replace(amt_match.group(0), '')
         name = re.sub(r'(?i)\b(reais|real|r\$|\$)\b', '', name)
@@ -1235,6 +1345,9 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
         if target_cat.id == "gastos":
             is_rec = False
             item_paid = True
+        elif target_cat.id == "desejos":
+            is_rec = False
+            item_paid = False
         else:
             is_rec = True
             item_paid = bool(paid) if paid is not None else False
@@ -1255,10 +1368,16 @@ def execute_gemini_action(payload: GeminiActionPayload) -> Dict[str, Any]:
         except Exception:
             pass
 
-        speech = (
-            f"Gasto '{new_item.name}' de R$ {new_item.amount:,.2f} cadastrado e quitado com sucesso "
-            f"na categoria {target_cat.name}! Saldo restante no mês: R$ {updated.summary.balance:,.2f}."
-        )
+        if target_cat.id == "desejos":
+            speech = (
+                f"Desejo '{new_item.name}' no valor estimado de R$ {new_item.amount:,.2f} cadastrado com sucesso "
+                f"na sua Lista de Desejos! Total acumulado na lista: R$ {target_cat.total:,.2f}."
+            )
+        else:
+            speech = (
+                f"Gasto '{new_item.name}' de R$ {new_item.amount:,.2f} cadastrado e quitado com sucesso "
+                f"na categoria {target_cat.name}! Saldo restante no mês: R$ {updated.summary.balance:,.2f}."
+            )
         action_history.record(
             action_type="create",
             title=new_item.name,

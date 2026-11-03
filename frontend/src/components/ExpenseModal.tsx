@@ -33,14 +33,15 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   useEffect(() => {
     const initialCat = initialCategoryId || categories[0]?.id || 'casa';
     const isCatGastos = initialCat.toLowerCase() === 'gastos';
+    const isCatDesejos = initialCat.toLowerCase() === 'desejos';
 
     if (initialItem) {
       setName(initialItem.name || '');
       setAmount(initialItem.amount ? initialItem.amount.toString() : '');
       setCategoryId(initialCat);
       setDueDay(initialItem.due_day || '10');
-      setPaid(isCatGastos ? true : !!initialItem.paid);
-      setIsRecurring(isCatGastos ? false : initialItem.is_recurring !== false);
+      setPaid(isCatGastos ? true : isCatDesejos ? false : !!initialItem.paid);
+      setIsRecurring((isCatGastos || isCatDesejos) ? false : initialItem.is_recurring !== false);
       setNotes(initialItem.notes || '');
 
       let hasInst = false;
@@ -69,7 +70,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setCategoryId(initialCat);
       setDueDay('10');
       setPaid(isCatGastos ? true : false);
-      setIsRecurring(isCatGastos ? false : true);
+      setIsRecurring((isCatGastos || isCatDesejos) ? false : true);
       setIsInstallment(false);
       setInstallmentsCurrent('1');
       setInstallmentsTotal('');
@@ -80,6 +81,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   if (!isOpen) return null;
 
   const isGastos = categoryId.toLowerCase() === 'gastos';
+  const isDesejos = categoryId.toLowerCase() === 'desejos';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,12 +93,12 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       id: initialItem?.id || `exp_${Date.now()}`,
       name: name.trim(),
       amount: parsedAmount,
-      paid: isGastos ? true : paid,
+      paid: isGastos ? true : isDesejos ? false : paid,
       due_day: dueDay.trim() || '10',
       notes: notes.trim() || undefined,
-      is_recurring: isGastos ? false : isRecurring,
-      installments_current: parsedTotal ? (parsedCurrent || 1) : undefined,
-      installments_total: parsedTotal || undefined,
+      is_recurring: (isGastos || isDesejos) ? false : isRecurring,
+      installments_current: isDesejos ? undefined : parsedTotal ? (parsedCurrent || 1) : undefined,
+      installments_total: isDesejos ? undefined : parsedTotal || undefined,
     };
     onSave(categoryId, item);
     onClose();
@@ -108,7 +110,9 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
         
         <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <h3 className="font-bold text-base text-slate-900 dark:text-white">
-            {initialItem ? 'Editar Despesa' : 'Nova Despesa'}
+            {isDesejos
+              ? initialItem ? 'Editar Desejo' : 'Novo Desejo'
+              : initialItem ? 'Editar Despesa' : 'Nova Despesa'}
           </h3>
           <button
             onClick={onClose}
@@ -131,6 +135,9 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 if (val.toLowerCase() === 'gastos') {
                   setPaid(true);
                   setIsRecurring(false);
+                } else if (val.toLowerCase() === 'desejos') {
+                  setPaid(false);
+                  setIsRecurring(false);
                 }
               }}
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -145,12 +152,12 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-              Descrição da Despesa
+              {isDesejos ? 'Título do Desejo' : 'Descrição da Despesa'}
             </label>
             <input
               type="text"
               required
-              placeholder="Ex: Aluguel, Internet, Advogado..."
+              placeholder={isDesejos ? 'Ex: PlayStation 5, Notebook Dell, Viagem...' : 'Ex: Aluguel, Internet, Advogado...'}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -160,7 +167,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                Valor (R$)
+                {isDesejos ? 'Preço Estimado (R$)' : 'Valor (R$)'}
               </label>
               <div className="relative">
                 <input
@@ -179,11 +186,11 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                Dia / Vencimento
+                {isDesejos ? 'Data Prevista' : 'Dia / Vencimento'}
               </label>
               <input
                 type="text"
-                placeholder="Ex: 10 ou 2026-10-10"
+                placeholder={isDesejos ? 'Ex: 2026-11-20 ou 20' : 'Ex: 10 ou 2026-10-10'}
                 value={dueDay}
                 onChange={(e) => setDueDay(e.target.value)}
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -191,7 +198,16 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
             </div>
           </div>
 
-          {isGastos ? (
+          {isDesejos ? (
+            <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs font-medium space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <span>✨ Lista de Desejos</span>
+              </div>
+              <p className="text-[11px] text-rose-700 dark:text-rose-400">
+                Itens na lista de desejos ficam salvos para planejamento e não reduzem seu saldo mensal. Ao efetivar a compra, você poderá consolidá-lo no orçamento com opções de parcelamento!
+              </p>
+            </div>
+          ) : isGastos ? (
             <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-medium space-y-1">
               <div className="font-bold flex items-center gap-1.5">
                 <span>⚡ Categoria Gastos</span>

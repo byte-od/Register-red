@@ -1,4 +1,4 @@
-import { MonthData, MonthListItem, CreateMonthPayload, OverviewStats, RecentAction, UnforeseenReportData } from './types';
+import { MonthData, MonthListItem, CreateMonthPayload, OverviewStats, RecentAction, UnforeseenReportData, ExpenseItem, ConsolidateWishRequest } from './types';
 
 const API_BASE = '/api';
 
@@ -72,6 +72,22 @@ export async function moveItemCategory(
     method: 'POST',
   });
   if (!res.ok) throw new Error('Falha ao mover item de categoria');
+  return res.json();
+}
+
+export async function consolidateWishItem(
+  monthId: string,
+  payload: ConsolidateWishRequest
+): Promise<{ success: boolean; item: ExpenseItem; source_category: string; target_category: string; month: MonthData }> {
+  const res = await fetch(`${API_BASE}/months/${monthId}/consolidate-wish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Falha ao consolidar desejo');
+  }
   return res.json();
 }
 

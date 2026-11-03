@@ -7,11 +7,13 @@ import {
 
 import { 
   MonthData, MonthListItem, ExpenseCategory, 
-  ExpenseItem, IncomeItem, CreateMonthPayload, OverviewStats 
+  ExpenseItem, IncomeItem, CreateMonthPayload, OverviewStats,
+  ConsolidateWishRequest
 } from './types';
 import { 
   fetchMonths, fetchMonth, updateMonth, toggleItemPaid, 
-  toggleItemRecurring, moveItemCategory, createMonth, syncToDrive, fetchOverviewStats 
+  toggleItemRecurring, moveItemCategory, consolidateWishItem,
+  createMonth, syncToDrive, fetchOverviewStats, formatBRL
 } from './api';
 
 import { Navbar } from './components/Navbar';
@@ -262,6 +264,31 @@ export const App: React.FC = () => {
     }
   };
 
+  // Consolidate Wishlist Item into real expense category
+  const handleConsolidateWish = async (payload: ConsolidateWishRequest) => {
+    if (!currentMonth) return;
+    try {
+      const res = await consolidateWishItem(currentMonthId, payload);
+      if (res.month) {
+        setCurrentMonth(res.month);
+      } else {
+        const reloaded = await fetchMonth(currentMonthId);
+        setCurrentMonth(reloaded);
+      }
+      await refreshList();
+      confetti({
+        particleCount: 120,
+        spread: 80,
+        origin: { y: 0.6 },
+      });
+      const instInfo = payload.installments_total > 1 ? ` (${payload.installments_total}x de ${formatBRL(res.item.amount)})` : '';
+      showToast(`🎉 Desejo "${res.item.name}" consolidado com sucesso em ${res.target_category || payload.target_category_id}!${instInfo}`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao consolidar desejo', 'error');
+      throw err;
+    }
+  };
+
   // Save Expense Item
   const handleSaveExpense = async (catId: string, item: ExpenseItem) => {
     if (!currentMonth) return;
@@ -269,6 +296,8 @@ export const App: React.FC = () => {
     const finalItem: ExpenseItem =
       catId === 'gastos'
         ? { ...item, paid: true, is_recurring: false }
+        : catId === 'desejos'
+        ? { ...item, paid: false, is_recurring: false }
         : item;
 
     const updatedCategories = currentMonth.categories.map((cat) => {
@@ -401,6 +430,60 @@ export const App: React.FC = () => {
       refreshList();
     } catch (err: any) {
       showToast(err.message || 'Erro ao adicionar gasto', 'error');
+    }
+  };
+
+  // Quick Add specifically to "Lista de Desejos"
+  const handleSaveQuickWish = async (wish: {
+    name: string;
+    amount: number;
+    due_day: string;
+    description?: string;
+  }) => {
+    if (!currentMonth) return;
+
+    let currentCategories = [...currentMonth.categories];
+    const hasDesejos = currentCategories.some((c) => c.id.toLowerCase() === 'desejos');
+
+    if (!hasDesejos) {
+      currentCategories.push({
+        id: 'desejos',
+        name: 'Lista de Desejos',
+        items: [],
+        total: 0,
+        paid_total: 0,
+        pending_total: 0,
+      });
+    }
+
+    const newWishItem: ExpenseItem = {
+      id: `exp_desejos_${Date.now()}`,
+      name: wish.name,
+      amount: wish.amount,
+      paid: false,
+      due_day: wish.due_day,
+      notes: wish.description,
+      is_recurring: false,
+    };
+
+    const updatedCategories = currentCategories.map((c) => {
+      if (c.id.toLowerCase() === 'desejos') {
+        return {
+          ...c,
+          items: [newWishItem, ...c.items],
+        };
+      }
+      return c;
+    });
+
+    const updated = { ...currentMonth, categories: updatedCategories };
+    try {
+      const saved = await updateMonth(currentMonthId, updated);
+      setCurrentMonth(saved);
+      showToast(`✨ Desejo "${wish.name}" adicionado à sua lista!`, 'success');
+      refreshList();
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao adicionar desejo', 'error');
     }
   };
 
@@ -598,6 +681,8 @@ export const App: React.FC = () => {
               onOpenQuickExpense={() => setIsQuickExpenseModalOpen(true)}
               onOpenUnforeseenReport={() => setActiveTab('unforeseen')}
               onQuickAddDirect={handleSaveQuickExpense}
+              onQuickAddWishDirect={handleSaveQuickWish}
+              onConsolidateWish={handleConsolidateWish}
               onMoveItemCategory={handleMoveItemCategory}
             />
 

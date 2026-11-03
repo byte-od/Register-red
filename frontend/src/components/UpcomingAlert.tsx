@@ -26,10 +26,11 @@ export const UpcomingAlert: React.FC<UpcomingAlertProps> = ({
   const isFutureMonth = (year ?? 0) > curYear || (year === curYear && (monthNumber ?? 0) > curMonth);
   const isPastMonth = (year ?? 0) < curYear || (year === curYear && (monthNumber ?? 0) < curMonth);
 
-  // Collect all unpaid items
+  // Collect all unpaid items (desejos não são dívidas vencendo no mês)
   const unpaidItems: { item: ExpenseItem; categoryName: string; dayNum: number }[] = [];
 
   categories.forEach((cat) => {
+    if (cat.id.toLowerCase() === 'desejos') return;
     cat.items.forEach((it) => {
       if (!it.paid) {
         let dayNum = 10;

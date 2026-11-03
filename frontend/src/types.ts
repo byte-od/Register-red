@@ -27,6 +27,17 @@ export interface ExpenseCategory {
   pending_total: number;
 }
 
+export interface ConsolidateWishRequest {
+  item_id: string;
+  target_category_id: string;
+  installments_total: number;
+  installments_current: number;
+  installment_amount?: number;
+  paid: boolean;
+  due_day?: string;
+  notes?: string;
+}
+
 export interface DailyTimelineItem {
   date: string;
   total_debt: number;

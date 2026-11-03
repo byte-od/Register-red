@@ -14,18 +14,20 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
   dailyTimeline,
   totalExpenses,
 }) => {
-  // Collect all expenses for top ranking
+  // Collect all expenses for top ranking (desejos não são despesas incorridas)
   const allExpenses: { name: string; amount: number; paid: boolean; category: string }[] = [];
-  categories.forEach((cat) => {
-    cat.items.forEach((it) => {
-      allExpenses.push({
-        name: it.name,
-        amount: it.amount,
-        paid: it.paid,
-        category: cat.name,
+  categories
+    .filter((c) => c.id.toLowerCase() !== 'desejos')
+    .forEach((cat) => {
+      cat.items.forEach((it) => {
+        allExpenses.push({
+          name: it.name,
+          amount: it.amount,
+          paid: it.paid,
+          category: cat.name,
+        });
       });
     });
-  });
 
   allExpenses.sort((a, b) => b.amount - a.amount);
   const topExpenses = allExpenses.slice(0, 5);
@@ -59,7 +61,9 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
           </div>
 
           <div className="space-y-4">
-            {categories.map((cat) => {
+            {categories
+              .filter((c) => c.id.toLowerCase() !== 'desejos')
+              .map((cat) => {
               const pct = totalExpenses > 0 ? (cat.total / totalExpenses) * 100 : 0;
               const color = categoryColors[cat.id.toLowerCase()] || categoryColors.outros;
 
